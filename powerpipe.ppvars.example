@@ -1,0 +1,8 @@
+# These variables are used for benchmarks such as shared_access
+trusted_subscriptions = ["00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111"]
+
+# These are the dimensions that will included as columns in the results
+common_dimensions = ["subscription_id", "region"]
+
+# These are tags that will be included as columns in the results
+tag_dimensions = ["Environment", "Owner"] 
