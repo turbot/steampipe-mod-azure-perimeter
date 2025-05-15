@@ -18,41 +18,11 @@ benchmark "network_access_general" {
   description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
   documentation = file("./perimeter/docs/network_access_general.md")
   children = [
-    control.vnet_peering_restrict_cross_tenant_access,
     control.network_watcher_enabled
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
     type = "Benchmark"
-  })
-}
-
-control "vnet_peering_restrict_cross_tenant_access" {
-  title       = "Virtual network peering should restrict cross-tenant access"
-  description = "Azure virtual network peering connections should be limited to within the same tenant to prevent unauthorized cross-tenant network access."
-
-  sql = <<-EOQ
-    select
-      p.id as resource,
-      case
-        when p.remote_virtual_network_id is null then 'skip'
-        when vn.tenant_id = split_part(p.remote_virtual_network_id, '/', extract(array_length(regexp_split_to_array(p.remote_virtual_network_id, '/'), 1) - 4)::int) then 'ok'
-        else 'alarm'
-      end as status,
-      case
-        when p.remote_virtual_network_id is null then p.name || ' has no remote virtual network.'
-        when vn.tenant_id = split_part(p.remote_virtual_network_id, '/', extract(array_length(regexp_split_to_array(p.remote_virtual_network_id, '/'), 1) - 4)::int) then p.name || ' is peered within the same tenant.'
-        else p.name || ' is peered with a virtual network in a different tenant.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_virtual_network_peering p
-      join azure_virtual_network vn on p.virtual_network_id = vn.id;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
   })
 }
 
@@ -83,7 +53,7 @@ control "network_watcher_enabled" {
         when w.region is null then 'Network Watcher not enabled in region ' || r.region || '.'
         else 'Network Watcher enabled in region ' || r.region || '.'
       end as reason
-      ${local.common_dimensions_sql}
+      ${local.common_dimensions_subscription_id_qualifier_sql}
     from
       regions_with_vnets r
       left join regions_with_watchers w on r.region = w.region;
@@ -143,6 +113,7 @@ control "nsg_rule_rdp_access_restricted" {
       select
         id,
         name,
+        resource_group,
         security_rules
       from
         azure_network_security_group
@@ -153,6 +124,7 @@ control "nsg_rule_rdp_access_restricted" {
       select
         id,
         name,
+        resource_group,
         jsonb_array_elements(security_rules) as rule
       from
         rdp_security_rules

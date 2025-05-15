@@ -86,39 +86,11 @@ benchmark "public_access_databases" {
   description   = "Database resources in your Azure subscriptions should be protected from unwanted public access."
   documentation = file("./perimeter/docs/public_access_databases.md")
   children = [
-    control.sql_server_firewall_no_public_access,
     control.cosmosdb_account_restrict_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
     type = "Benchmark"
-  })
-}
-
-control "sql_server_firewall_no_public_access" {
-  title       = "SQL servers should not have public access via firewall rules"
-  description = "Azure SQL servers should not allow public internet access through firewall rules. Set firewall rules to only allow connections from specific IP addresses or ranges."
-
-  sql = <<-EOQ
-    select
-      fr.id as resource,
-      case
-        when fr.start_ip_address = '0.0.0.0' then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when fr.start_ip_address = '0.0.0.0' then s.name || ' firewall rule ' || fr.name || ' allows public access.'
-        else s.name || ' firewall rule ' || fr.name || ' does not allow public access.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_sql_server_firewall_rule fr
-      join azure_sql_server s on fr.server_id = s.id;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/SQL"
   })
 }
 
@@ -154,7 +126,6 @@ benchmark "public_access_compute" {
   documentation = file("./perimeter/docs/public_access_compute.md")
   children = [
     control.vm_restrict_public_access,
-    control.app_service_restrict_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -185,32 +156,6 @@ control "vm_restrict_public_access" {
 
   tags = merge(local.azure_perimeter_common_tags, {
     service = "Azure/Compute"
-  })
-}
-
-control "app_service_restrict_public_access" {
-  title       = "App Services should restrict public access"
-  description = "Azure App Services should use access restrictions to control which networks can access them. Set IP restrictions or use private endpoints."
-
-  sql = <<-EOQ
-    select
-      a.id as resource,
-      case
-        when array_length(ip_security_restriction_addresses, 1) = 0 then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when array_length(ip_security_restriction_addresses, 1) = 0 then a.name || ' does not have IP security restrictions.'
-        else a.name || ' has IP security restrictions.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_app_service_web_app a;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/AppService"
   })
 }
 
@@ -362,7 +307,7 @@ control "network_security_group_no_public_access" {
         else n.name || ' does not allow unrestricted inbound access.'
       end as reason
       ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${local.common_dimensions_subscription_id_qualifier_sql}
     from
       nsg_with_public_access n;
   EOQ
