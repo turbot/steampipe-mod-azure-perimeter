@@ -33,7 +33,11 @@ control "network_watcher_enabled" {
   sql = <<-EOQ
     with regions_with_vnets as (
       select distinct
-        region
+        region,
+        _ctx,
+        tags,
+        resource_group,
+        subscription_id
       from
         azure_virtual_network
     ),
@@ -53,7 +57,8 @@ control "network_watcher_enabled" {
         when w.region is null then 'Network Watcher not enabled in region ' || r.region || '.'
         else 'Network Watcher enabled in region ' || r.region || '.'
       end as reason
-      ${local.common_dimensions_subscription_id_qualifier_sql}
+      ${local.tag_dimensions_sql}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "r.")}
     from
       regions_with_vnets r
       left join regions_with_watchers w on r.region = w.region;
@@ -93,8 +98,7 @@ control "nsg_subnet_attached" {
         when s.network_security_group_id is null then s.name || ' has no network security group attached.'
         else s.name || ' has network security group attached.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${local.common_dimensions_global_sql}
     from
       azure_subnet s;
   EOQ
@@ -114,6 +118,10 @@ control "nsg_rule_rdp_access_restricted" {
         id,
         name,
         resource_group,
+        _ctx,
+        region,
+        tags,
+        subscription_id,
         security_rules
       from
         azure_network_security_group
@@ -124,7 +132,11 @@ control "nsg_rule_rdp_access_restricted" {
       select
         id,
         name,
+        tags,
         resource_group,
+        _ctx,
+        region,
+        subscription_id,
         jsonb_array_elements(security_rules) as rule
       from
         rdp_security_rules

@@ -70,8 +70,7 @@ control "storage_account_blob_containers_restrict_public_access" {
         when c.public_access = 'None' then c.name || ' restricts public access.'
         else c.name || ' allows public ' || c.public_access || ' access.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${local.common_dimensions_global_sql}
     from
       azure_storage_container c;
   EOQ
@@ -276,6 +275,11 @@ control "network_security_group_no_public_access" {
       select
         id,
         name,
+        _ctx,
+        region,
+        resource_group,
+        subscription_id,
+        tags,
         jsonb_array_elements(security_rules) as rule
       from
         azure_network_security_group
@@ -307,7 +311,7 @@ control "network_security_group_no_public_access" {
         else n.name || ' does not allow unrestricted inbound access.'
       end as reason
       ${local.tag_dimensions_sql}
-      ${local.common_dimensions_subscription_id_qualifier_sql}
+      ${local.common_dimensions_sql}
     from
       nsg_with_public_access n;
   EOQ
