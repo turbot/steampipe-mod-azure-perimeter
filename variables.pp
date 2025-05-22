@@ -68,7 +68,7 @@ locals {
 
   resource_group_filter_qualifier_sql = <<-EOQ
   %{~if length(var.resource_group_filter) > 0}
-    and __QUALIFIER__resource_group in (${join(", ", [for rg in var.resource_group_filter : "'${rg}'"])})
+    __QUALIFIER__resource_group in (${join(", ", [for rg in var.resource_group_filter : "'${rg}'"])})
   %{endif~}
   EOQ
 }

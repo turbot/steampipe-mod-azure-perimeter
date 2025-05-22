@@ -3,11 +3,11 @@ benchmark "public_access" {
   description   = "Resources in your Azure subscriptions should be protected from unwanted public access."
   documentation = file("./perimeter/docs/public_access.md")
   children = [
-    benchmark.public_access_storage,
-    benchmark.public_access_databases,
     benchmark.public_access_compute,
     benchmark.public_access_containers,
-    benchmark.public_access_network
+    benchmark.public_access_databases,
+    benchmark.public_access_network,
+    benchmark.public_access_storage,
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -20,8 +20,8 @@ benchmark "public_access_storage" {
   description   = "Storage resources in your Azure subscriptions should be protected from unwanted public access."
   documentation = file("./perimeter/docs/public_access_storage.md")
   children = [
-    control.storage_account_restrict_public_access,
-    control.storage_account_blob_containers_restrict_public_access
+    control.storage_account_blob_containers_restrict_public_access,
+    control.storage_account_restrict_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -47,7 +47,8 @@ control "storage_account_restrict_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_storage_account a;
+      azure_storage_account a
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -72,7 +73,8 @@ control "storage_account_blob_containers_restrict_public_access" {
       end as reason
       ${local.common_dimensions_global_sql}
     from
-      azure_storage_container c;
+      azure_storage_container c
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -111,7 +113,8 @@ control "cosmosdb_account_restrict_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_cosmosdb_account c;
+      azure_cosmosdb_account c
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -150,7 +153,8 @@ control "vm_restrict_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_compute_virtual_machine vm;
+      azure_compute_virtual_machine vm
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -190,7 +194,8 @@ control "aks_cluster_restrict_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_kubernetes_cluster c;
+      azure_kubernetes_cluster c
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -216,7 +221,8 @@ control "container_registry_restrict_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_container_registry r;
+      azure_container_registry r
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -258,7 +264,8 @@ control "application_gateway_waf_enabled" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_application_gateway g;
+      azure_application_gateway g
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -283,6 +290,7 @@ control "network_security_group_no_public_access" {
         jsonb_array_elements(security_rules) as rule
       from
         azure_network_security_group
+        ${local.resource_group_filter_sql}
       where
         jsonb_typeof(security_rules) = 'array'
     )
@@ -295,6 +303,14 @@ control "network_security_group_no_public_access" {
             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+            or (
+              rule -> 'properties' ->> 'sourceAddressPrefix' is null
+              and (
+                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+              )
+            )
           )
         then 'alarm'
         else 'ok'
@@ -306,6 +322,14 @@ control "network_security_group_no_public_access" {
             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+            or (
+              rule -> 'properties' ->> 'sourceAddressPrefix' is null
+              and (
+                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+              )
+            )
           )
         then n.name || ' allows unrestricted inbound access with rule: ' || (rule ->> 'name')
         else n.name || ' does not allow unrestricted inbound access.'

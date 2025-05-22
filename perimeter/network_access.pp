@@ -4,8 +4,8 @@ benchmark "network_access" {
   documentation = file("./perimeter/docs/network_access.md")
   children = [
     benchmark.network_access_general,
-    benchmark.network_access_security_groups,
-    benchmark.network_access_public_ips
+    benchmark.network_access_public_ips,
+    benchmark.network_access_security_groups
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -40,6 +40,7 @@ control "network_watcher_enabled" {
         subscription_id
       from
         azure_virtual_network
+        ${local.resource_group_filter_sql}
     ),
     regions_with_watchers as (
       select distinct
@@ -74,8 +75,8 @@ benchmark "network_access_security_groups" {
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
   documentation = file("./perimeter/docs/network_access_security_groups.md")
   children = [
-    control.nsg_subnet_attached,
-    control.nsg_rule_rdp_access_restricted
+    control.nsg_rule_rdp_access_restricted,
+    control.nsg_subnet_attached
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -100,7 +101,8 @@ control "nsg_subnet_attached" {
       end as reason
       ${local.common_dimensions_global_sql}
     from
-      azure_subnet s;
+      azure_subnet s
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -222,8 +224,8 @@ benchmark "network_access_public_ips" {
   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
-    control.public_ip_restrict_usage,
-    control.public_ip_restrict_dynamic_addresses
+    control.public_ip_restrict_dynamic_addresses,
+    control.public_ip_restrict_usage
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -249,7 +251,8 @@ control "public_ip_restrict_usage" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_public_ip ip;
+      azure_public_ip ip
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -275,7 +278,8 @@ control "public_ip_restrict_dynamic_addresses" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_public_ip ip;
+      azure_public_ip ip
+      ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
