@@ -2,13 +2,10 @@
 
 Run security controls across all your Azure subscriptions to look for resources that are publicly accessible, shared with untrusted accounts, have insecure network configurations, and more.
 
-<!--
 <img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_dashboard.png" width="50%" type="thumbnail"/>
 <img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_dashboard.png" width="50%" type="thumbnail"/>
 <img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_public_access_dashboard.png" width="50%" type="thumbnail"/>
-<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_shared_access_dashboard.png" width="50%" type="thumbnail"/>
-<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_public_access_console.png" width="50%" type="thumbnail"/>
--->
+<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_console.png" width="50%" type="thumbnail"/>
 
 ## Documentation
 
