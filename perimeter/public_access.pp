@@ -3,7 +3,24 @@ benchmark "public_access" {
   description   = "Resources should not be publicly accessible as they could expose sensitive data to bad actors."
   documentation = file("./perimeter/docs/public_access.md")
   children = [
-    benchmark.public_access_settings
+    benchmark.public_access_settings,
+    benchmark.resource_policy_public_access
+  ]
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    type = "Benchmark"
+  })
+}
+
+benchmark "resource_policy_public_access" {
+  title         = "Resource Policy Public Access"
+  description   = "Resources should not be publicly accessible through statements in their resource policies, access policies, or authorization rules."
+  documentation = file("./perimeter/docs/resource_policy_public_access.md")
+  children = [
+    control.storage_account_cors_prohibit_public_access,
+    control.cosmosdb_account_cors_prohibit_public_access,
+    control.sql_server_firewall_rule_prohibit_public_access,
+    control.storage_account_network_rules_prohibit_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -290,5 +307,179 @@ control "network_security_group_prohibit_public_access" {
 
   tags = merge(local.azure_perimeter_common_tags, {
     service = "Azure/Network"
+  })
+}
+
+control "storage_account_cors_prohibit_public_access" {
+  title       = "Storage account CORS policies should prohibit public access"
+  description = "Azure Storage account Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
+
+  sql = <<-EOQ
+    with cors_configured_accounts as (
+      select
+        id,
+        name,
+        _ctx,
+        region,
+        resource_group,
+        subscription_id,
+        tags,
+        blob_service_logging -> 'cors' -> 'corsRules' as cors_rules
+      from
+        azure_storage_account
+        ${local.resource_group_filter_sql}
+      where
+        blob_service_logging -> 'cors' -> 'corsRules' is not null
+        and jsonb_array_length(blob_service_logging -> 'cors' -> 'corsRules') > 0
+    )
+    select
+      a.id as resource,
+      case
+        when cors_rules is null then 'ok'
+        when jsonb_array_length(cors_rules) = 0 then 'ok'
+        when cors_rules @> '[{"allowedOrigins": ["*"]}]' then 'alarm'
+        when cors_rules::text like '%"allowedOrigins":%*%' then 'alarm'
+        else 'ok'
+      end as status,
+      case
+        when cors_rules is null then a.name || ' has no CORS rules configured.'
+        when jsonb_array_length(cors_rules) = 0 then a.name || ' has no CORS rules configured.'
+        when cors_rules @> '[{"allowedOrigins": ["*"]}]' then a.name || ' has CORS rules allowing access from any origin (*).'
+        when cors_rules::text like '%"allowedOrigins":%*%' then a.name || ' has CORS rules that may allow public access.'
+        else a.name || ' CORS rules do not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      cors_configured_accounts a;
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/Storage"
+  })
+}
+
+control "cosmosdb_account_cors_prohibit_public_access" {
+  title       = "Cosmos DB account CORS policies should prohibit public access"
+  description = "Azure Cosmos DB account Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
+
+  sql = <<-EOQ
+    with cors_configured_accounts as (
+      select
+        id,
+        name,
+        _ctx,
+        region,
+        resource_group,
+        subscription_id,
+        tags,
+        cors
+      from
+        azure_cosmosdb_account
+        ${local.resource_group_filter_sql}
+      where
+        cors is not null
+        and jsonb_array_length(cors) > 0
+    )
+    select
+      c.id as resource,
+      case
+        when cors is null then 'ok'
+        when jsonb_array_length(cors) = 0 then 'ok'
+        when cors @> '[{"allowedOrigins": "*"}]' then 'alarm'
+        when cors::text like '%"allowedOrigins":"*"%' then 'alarm'
+        else 'ok'
+      end as status,
+      case
+        when cors is null then c.name || ' has no CORS rules configured.'
+        when jsonb_array_length(cors) = 0 then c.name || ' has no CORS rules configured.'
+        when cors @> '[{"allowedOrigins": "*"}]' then c.name || ' has CORS rules allowing access from any origin (*).'
+        when cors::text like '%"allowedOrigins":"*"%' then c.name || ' has CORS rules that may allow public access.'
+        else c.name || ' CORS rules do not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      cors_configured_accounts c;
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/CosmosDB"
+  })
+}
+
+control "sql_server_firewall_rule_prohibit_public_access" {
+  title       = "SQL Server firewall rules should prohibit public access"
+  description = "Azure SQL Server firewall rules should not allow unrestricted access from the internet (0.0.0.0 to 255.255.255.255)."
+
+  sql = <<-EOQ
+    with servers_with_rules as (
+      select
+        id,
+        name,
+        _ctx,
+        region,
+        resource_group,
+        subscription_id,
+        tags,
+        jsonb_array_elements(firewall_rules) as rule
+      from
+        azure_sql_server
+        ${local.resource_group_filter_sql}
+      where
+        firewall_rules is not null
+        and jsonb_array_length(firewall_rules) > 0
+    )
+    select
+      s.id as resource,
+      case
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then 'alarm'
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then 'alarm'
+        else 'ok'
+      end as status,
+      case
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing unrestricted internet access.'
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing Azure services access.'
+        else s.name || ' firewall rule ' || (rule ->> 'name') || ' does not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      servers_with_rules s;
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/SQL"
+  })
+}
+
+control "storage_account_network_rules_prohibit_public_access" {
+  title       = "Storage account network rules should prohibit public access"
+  description = "Azure Storage account network access rules should not allow unrestricted access from the internet when the default action is set to Allow."
+
+  sql = <<-EOQ
+    select
+      a.id as resource,
+      case
+        when network_rule_default_action = 'Allow' then 'alarm'
+        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
+          and jsonb_array_length(network_ip_rules) > 0 then 'info'
+        else 'ok'
+      end as status,
+      case
+        when network_rule_default_action = 'Allow' then a.name || ' network rules default action is Allow, which permits public access.'
+        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
+          and jsonb_array_length(network_ip_rules) > 0 then a.name || ' has network IP rules configured with default Deny action.'
+        else a.name || ' network rules do not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_storage_account a
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/Storage"
   })
 } 
