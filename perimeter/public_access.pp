@@ -1,13 +1,9 @@
 benchmark "public_access" {
   title         = "Public Access"
-  description   = "Resources in your Azure subscriptions should be protected from unwanted public access."
+  description   = "Resources should not be publicly accessible as they could expose sensitive data to bad actors."
   documentation = file("./perimeter/docs/public_access.md")
   children = [
-    benchmark.public_access_compute,
-    benchmark.public_access_containers,
-    benchmark.public_access_databases,
-    benchmark.public_access_network,
-    benchmark.public_access_storage,
+    benchmark.public_access_settings
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -15,13 +11,19 @@ benchmark "public_access" {
   })
 }
 
-benchmark "public_access_storage" {
-  title         = "Storage Public Access"
-  description   = "Storage resources in your Azure subscriptions should be protected from unwanted public access."
-  documentation = file("./perimeter/docs/public_access_storage.md")
+benchmark "public_access_settings" {
+  title         = "Public Access Settings"
+  description   = "Resources should not be publicly accessible or exposed to the internet through configurations and settings."
+  documentation = file("./perimeter/docs/public_access_settings.md")
   children = [
-    control.storage_account_blob_containers_restrict_public_access,
-    control.storage_account_restrict_public_access
+    control.storage_account_prohibit_public_access,
+    control.storage_blob_container_prohibit_public_access,
+    control.cosmosdb_account_prohibit_public_access,
+    control.compute_vm_prohibit_public_access,
+    control.kubernetes_cluster_prohibit_public_access,
+    control.container_registry_prohibit_public_access,
+    control.network_application_gateway_waf_enabled,
+    control.network_security_group_prohibit_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -29,8 +31,8 @@ benchmark "public_access_storage" {
   })
 }
 
-control "storage_account_restrict_public_access" {
-  title       = "Storage accounts should restrict public access"
+control "storage_account_prohibit_public_access" {
+  title       = "Storage accounts should prohibit public access"
   description = "Azure Storage accounts should have the 'Allow Blob public access' property set to disabled to prevent unauthorized access."
 
   sql = <<-EOQ
@@ -41,7 +43,7 @@ control "storage_account_restrict_public_access" {
         else 'alarm'
       end as status,
       case
-        when allow_blob_public_access = false then a.name || ' restricts public access to blobs.'
+        when allow_blob_public_access = false then a.name || ' prohibits public access to blobs.'
         else a.name || ' allows public access to blobs.'
       end as reason
       ${local.tag_dimensions_sql}
@@ -56,8 +58,8 @@ control "storage_account_restrict_public_access" {
   })
 }
 
-control "storage_account_blob_containers_restrict_public_access" {
-  title       = "Storage account blob containers should restrict public access"
+control "storage_blob_container_prohibit_public_access" {
+  title       = "Storage account blob containers should prohibit public access"
   description = "Blob containers in Azure Storage accounts should have their public access level set to 'Private' to prevent unauthorized access."
 
   sql = <<-EOQ
@@ -68,7 +70,7 @@ control "storage_account_blob_containers_restrict_public_access" {
         else 'alarm'
       end as status,
       case
-        when c.public_access = 'None' then c.name || ' restricts public access.'
+        when c.public_access = 'None' then c.name || ' prohibits public access.'
         else c.name || ' allows public ' || c.public_access || ' access.'
       end as reason
       ${local.common_dimensions_global_sql}
@@ -82,21 +84,8 @@ control "storage_account_blob_containers_restrict_public_access" {
   })
 }
 
-benchmark "public_access_databases" {
-  title         = "Databases Public Access"
-  description   = "Database resources in your Azure subscriptions should be protected from unwanted public access."
-  documentation = file("./perimeter/docs/public_access_databases.md")
-  children = [
-    control.cosmosdb_account_restrict_public_access
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "cosmosdb_account_restrict_public_access" {
-  title       = "Cosmos DB accounts should restrict public access"
+control "cosmosdb_account_prohibit_public_access" {
+  title       = "Cosmos DB accounts should prohibit public access"
   description = "Azure Cosmos DB accounts should use private endpoints and restrict public network access to prevent unauthorized access."
 
   sql = <<-EOQ
@@ -108,7 +97,7 @@ control "cosmosdb_account_restrict_public_access" {
       end as status,
       case
         when public_network_access = 'Enabled' then c.name || ' allows public network access.'
-        else c.name || ' restricts public network access.'
+        else c.name || ' prohibits public network access.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
@@ -122,21 +111,8 @@ control "cosmosdb_account_restrict_public_access" {
   })
 }
 
-benchmark "public_access_compute" {
-  title         = "Compute Public Access"
-  description   = "Compute resources in your Azure subscriptions should be protected from unwanted public access."
-  documentation = file("./perimeter/docs/public_access_compute.md")
-  children = [
-    control.vm_restrict_public_access,
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "vm_restrict_public_access" {
-  title       = "Virtual machines should restrict public access"
+control "compute_vm_prohibit_public_access" {
+  title       = "Virtual machines should prohibit public access"
   description = "Azure virtual machines should not have public IP addresses directly assigned to them. Use Azure Bastion, load balancers, or application gateways to control access."
 
   sql = <<-EOQ
@@ -162,22 +138,8 @@ control "vm_restrict_public_access" {
   })
 }
 
-benchmark "public_access_containers" {
-  title         = "Containers Public Access"
-  description   = "Container resources in your Azure subscriptions should be protected from unwanted public access."
-  documentation = file("./perimeter/docs/public_access_containers.md")
-  children = [
-    control.aks_cluster_restrict_public_access,
-    control.container_registry_restrict_public_access
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "aks_cluster_restrict_public_access" {
-  title       = "AKS clusters should restrict public access"
+control "kubernetes_cluster_prohibit_public_access" {
+  title       = "AKS clusters should prohibit public access"
   description = "Azure Kubernetes Service (AKS) clusters should use private API server endpoints to restrict public access to the control plane."
 
   sql = <<-EOQ
@@ -203,8 +165,8 @@ control "aks_cluster_restrict_public_access" {
   })
 }
 
-control "container_registry_restrict_public_access" {
-  title       = "Container registries should restrict public access"
+control "container_registry_prohibit_public_access" {
+  title       = "Container registries should prohibit public access"
   description = "Azure Container Registries should be configured with private endpoints and network rules to restrict public access."
 
   sql = <<-EOQ
@@ -215,7 +177,7 @@ control "container_registry_restrict_public_access" {
         else 'alarm'
       end as status,
       case
-        when public_network_access = 'Disabled' then r.name || ' restricts public network access.'
+        when public_network_access = 'Disabled' then r.name || ' prohibits public network access.'
         else r.name || ' allows public network access.'
       end as reason
       ${local.tag_dimensions_sql}
@@ -230,21 +192,7 @@ control "container_registry_restrict_public_access" {
   })
 }
 
-benchmark "public_access_network" {
-  title         = "Network Public Access"
-  description   = "Network resources in your Azure subscriptions should be protected from unwanted public access."
-  documentation = file("./perimeter/docs/public_access_network.md")
-  children = [
-    control.application_gateway_waf_enabled,
-    control.network_security_group_no_public_access
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "application_gateway_waf_enabled" {
+control "network_application_gateway_waf_enabled" {
   title       = "Application Gateway should have WAF enabled"
   description = "Azure Application Gateway instances exposed to the internet should have Web Application Firewall (WAF) enabled to protect against common web vulnerabilities."
 
@@ -273,8 +221,8 @@ control "application_gateway_waf_enabled" {
   })
 }
 
-control "network_security_group_no_public_access" {
-  title       = "Network security groups should not allow unrestricted access from the internet"
+control "network_security_group_prohibit_public_access" {
+  title       = "Network security groups should prohibit unrestricted access from the internet"
   description = "Network security groups (NSGs) should not have rules that allow unrestricted inbound access from the internet (0.0.0.0/0) to any port."
 
   sql = <<-EOQ
@@ -332,7 +280,7 @@ control "network_security_group_no_public_access" {
             )
           )
         then n.name || ' allows unrestricted inbound access with rule: ' || (rule ->> 'name')
-        else n.name || ' does not allow unrestricted inbound access.'
+        else n.name || ' prohibits unrestricted inbound access.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}

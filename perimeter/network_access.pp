@@ -75,8 +75,8 @@ benchmark "network_access_security_groups" {
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
   documentation = file("./perimeter/docs/network_access_security_groups.md")
   children = [
-    control.nsg_rule_rdp_access_restricted,
-    control.nsg_subnet_attached
+    control.network_security_group_rdp_prohibit_public_access,
+    control.network_subnet_require_security_group
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -84,7 +84,7 @@ benchmark "network_access_security_groups" {
   })
 }
 
-control "nsg_subnet_attached" {
+control "network_subnet_require_security_group" {
   title       = "All subnets should be protected by a network security group"
   description = "Azure subnets should have a network security group (NSG) attached to control network traffic and implement security boundaries."
 
@@ -110,8 +110,8 @@ control "nsg_subnet_attached" {
   })
 }
 
-control "nsg_rule_rdp_access_restricted" {
-  title       = "Network security groups should restrict RDP access from the internet"
+control "network_security_group_rdp_prohibit_public_access" {
+  title       = "Network security groups should prohibit RDP access from the internet"
   description = "Azure network security groups should not allow unrestricted RDP (port 3389) access from the internet to reduce the risk of brute force attacks."
 
   sql = <<-EOQ
@@ -206,7 +206,7 @@ control "nsg_rule_rdp_access_restricted" {
             )
           )
         then name || ' allows unrestricted RDP access from the internet with rule: ' || (rule ->> 'name')
-        else name || ' restricts RDP access from the internet.'
+        else name || ' prohibits RDP access from the internet.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
@@ -224,8 +224,8 @@ benchmark "network_access_public_ips" {
   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
-    control.public_ip_restrict_dynamic_addresses,
-    control.public_ip_restrict_usage
+    control.network_public_ip_require_static_allocation,
+    control.network_public_ip_limit_usage
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -233,7 +233,7 @@ benchmark "network_access_public_ips" {
   })
 }
 
-control "public_ip_restrict_usage" {
+control "network_public_ip_limit_usage" {
   title       = "Public IP addresses should be restricted in usage"
   description = "Azure resources should limit the use of public IP addresses to only those that truly require internet connectivity. Minimize public IP usage to reduce your attack surface."
 
@@ -260,7 +260,7 @@ control "public_ip_restrict_usage" {
   })
 }
 
-control "public_ip_restrict_dynamic_addresses" {
+control "network_public_ip_require_static_allocation" {
   title       = "Public IP addresses should use static allocation method"
   description = "Azure public IP addresses should be configured with static allocation to ensure consistent addressing for security configurations like firewall rules."
 
