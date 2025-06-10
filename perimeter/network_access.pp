@@ -22,7 +22,7 @@ benchmark "network_access_general" {
     control.application_gateway_waf_enabled,
     control.app_service_vnet_integration_enabled,
     control.function_app_vnet_integration_enabled,
-    control.sql_database_server_restrict_public_network_access,
+    control.sql_server_restrict_public_network_access,
     control.storage_account_restrict_network_access,
     control.cosmos_db_restrict_network_access,
     # control.aks_cluster_use_private_cluster,
@@ -161,9 +161,9 @@ control "function_app_vnet_integration_enabled" {
   })
 }
 
-control "sql_database_server_restrict_public_network_access" {
-  title       = "SQL Database Server should restrict public network access"
-  description = "Azure SQL Database Server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
+control "sql_server_restrict_public_network_access" {
+  title       = "SQL Server should restrict public network access"
+  description = "Azure SQL Server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
 
   sql = <<-EOQ
     with sql_servers_with_restrictions as (
@@ -209,7 +209,7 @@ control "sql_database_server_restrict_public_network_access" {
     service = "Azure/SQL"
   })
 }
-
+//network_ip_rules
 control "storage_account_restrict_public_network_access" {
   title       = "Storage accounts should restrict public network access"
   description = "Azure Storage accounts should be configured to restrict public network access through virtual network rules."
@@ -238,7 +238,7 @@ control "storage_account_restrict_public_network_access" {
     service = "Azure/Storage"
   })
 }
-
+// ip_rules
 control "cosmos_db_restrict_network_access" {
   title       = "Cosmos DB accounts should restrict public network access"
   description = "Azure Cosmos DB accounts should be configured to restrict public network access through virtual network rules."
