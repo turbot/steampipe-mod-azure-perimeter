@@ -18,7 +18,15 @@ benchmark "network_access_general" {
   description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
   documentation = file("./perimeter/docs/network_access_general.md")
   children = [
-    control.network_watcher_enabled
+    control.network_watcher_enabled,
+    control.application_gateway_waf_enabled,
+    control.app_service_vnet_integration_enabled,
+    control.function_app_vnet_integration_enabled,
+    control.sql_database_server_restrict_public_network_access,
+    control.storage_account_restrict_network_access,
+    control.cosmos_db_restrict_network_access,
+    # control.aks_cluster_use_private_cluster,
+    # control.virtual_network_peering_cross_subscription_shared
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -27,8 +35,8 @@ benchmark "network_access_general" {
 }
 
 control "network_watcher_enabled" {
-  title       = "Network Watcher should be enabled for all regions"
-  description = "Azure Network Watcher should be enabled for all regions where you have virtual networks to monitor and diagnose network issues."
+  title       = "Network Watcher should be enabled for the regions where there are virtual networks"
+  description = "Azure Network Watcher should be enabled for the regions where there are virtual networks to monitor and diagnose network issues."
 
   sql = <<-EOQ
     with regions_with_vnets as (
@@ -69,39 +77,28 @@ control "network_watcher_enabled" {
     service = "Azure/Network"
   })
 }
-
-benchmark "network_access_security_groups" {
-  title         = "Security Group Access"
-  description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
-  documentation = file("./perimeter/docs/network_access_security_groups.md")
-  children = [
-    control.network_security_group_rdp_prohibit_public_access,
-    control.network_subnet_require_security_group
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "network_subnet_require_security_group" {
-  title       = "All subnets should be protected by a network security group"
-  description = "Azure subnets should have a network security group (NSG) attached to control network traffic and implement security boundaries."
+//https://learn.microsoft.com/en-us/azure/web-application-firewall/ag/best-practices
+control "application_gateway_waf_enabled" {
+  title       = "Application Gateway should have Web Application Firewall enabled"
+  description = "Azure Application Gateway should have WAF enabled to protect web applications from common attacks and vulnerabilities."
 
   sql = <<-EOQ
     select
-      s.id as resource,
+      id as resource,
       case
-        when s.network_security_group_id is null then 'alarm'
-        else 'ok'
+        when web_application_firewall_configuration is not null and web_application_firewall_configuration ->> 'enabled' = 'true' then 'ok'
+        when firewall_policy is not null then 'ok'
+        else 'alarm'
       end as status,
       case
-        when s.network_security_group_id is null then s.name || ' has no network security group attached.'
-        else s.name || ' has network security group attached.'
+        when web_application_firewall_configuration is not null and web_application_firewall_configuration ->> 'enabled' = 'true' then name || ' has WAF enabled.'
+        when firewall_policy is not null then name || ' has WAF policy attached.'
+        else name || ' does not have WAF enabled.'
       end as reason
-      ${local.common_dimensions_global_sql}
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
     from
-      azure_subnet s
+      azure_application_gateway
       ${local.resource_group_filter_sql};
   EOQ
 
@@ -109,180 +106,701 @@ control "network_subnet_require_security_group" {
     service = "Azure/Network"
   })
 }
-
-control "network_security_group_rdp_prohibit_public_access" {
-  title       = "Network security groups should prohibit RDP access from the internet"
-  description = "Azure network security groups should not allow unrestricted RDP (port 3389) access from the internet to reduce the risk of brute force attacks."
+//https://learn.microsoft.com/en-us/azure/virtual-network/vnet-integration-for-azure-services
+control "app_service_vnet_integration_enabled" {
+  title       = "App Service should use VNet"
+  description = "Azure App Service apps should be integrated with virtual networks to secure network communication and restrict outbound access."
 
   sql = <<-EOQ
-    with rdp_security_rules as (
+    select
+      id as resource,
+      case
+        when vnet_connection is not null then 'ok'
+        else 'alarm'
+      end as status,
+      case
+        when vnet_connection is not null then name || ' is integrated with VNet.'
+        else name || ' is not integrated with VNet.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_app_service_web_app
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/AppService"
+  })
+}
+
+control "function_app_vnet_integration_enabled" {
+  title       = "Function Apps should use VNet"
+  description = "Azure Function Apps should be integrated with virtual networks for secure network access and to restrict outbound traffic."
+
+  sql = <<-EOQ
+    select
+      id as resource,
+      case
+        when site_config -> 'vnetName' is not null then 'ok'
+        else 'alarm'
+      end as status,
+      case
+        when site_config -> 'vnetName' is not null then name || ' is integrated with VNet.'
+        else name || ' is not integrated with VNet.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_app_service_function_app
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/AppService"
+  })
+}
+
+control "sql_database_server_restrict_public_network_access" {
+  title       = "SQL Database Server should restrict public network access"
+  description = "Azure SQL Database Server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
+
+  sql = <<-EOQ
+    with sql_servers_with_restrictions as (
       select
-        id,
-        name,
-        resource_group,
-        _ctx,
-        region,
-        tags,
-        subscription_id,
-        security_rules
+        s.id,
+        s.name,
+        s.tags,
+        s.resource_group,
+        s._ctx,
+        s.region,
+        s.subscription_id,
+        case
+          when s.public_network_access = 'Disabled' then true
+          when jsonb_array_length(s.firewall_rules) > 0 
+              and exists (
+                select 1 from jsonb_array_elements(s.firewall_rules) as rule
+                  where rule -> 'properties' ->> 'startIpAddress' = '0.0.0.0' 
+                  and rule -> 'properties' ->> 'endIpAddress' = '255.255.255.255'
+              ) then false
+          else true
+        end as has_restrictions
       from
-        azure_network_security_group
-      where
-        jsonb_typeof(security_rules) = 'array'
-    ),
-    allow_rdp_rules as (
-      select
-        id,
-        name,
-        tags,
-        resource_group,
-        _ctx,
-        region,
-        subscription_id,
-        jsonb_array_elements(security_rules) as rule
-      from
-        rdp_security_rules
-      where
-        jsonb_typeof(security_rules) = 'array'
-        and jsonb_array_length(security_rules) > 0
+        azure_sql_server s
     )
     select
       id as resource,
       case
-        when rule -> 'properties' ->> 'access' = 'Allow'
-          and rule -> 'properties' ->> 'direction' = 'Inbound'
-          and (
-            rule -> 'properties' ->> 'destinationPortRange' = '3389'
-            or rule -> 'properties' ->> 'destinationPortRange' = '*'
-            or (
-              rule -> 'properties' ->> 'destinationPortRange' is null
-              and (
-                rule -> 'properties' -> 'destinationPortRanges' @> '["3389"]'
-                or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
-              )
-            )
-          )
-          and (
-            rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
-            or (
-              rule -> 'properties' ->> 'sourceAddressPrefix' is null
-              and (
-                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
-              )
-            )
-          )
-        then 'alarm'
-        else 'ok'
+        when has_restrictions then 'ok'
+        else 'alarm'
       end as status,
       case
-        when rule -> 'properties' ->> 'access' = 'Allow'
-          and rule -> 'properties' ->> 'direction' = 'Inbound'
-          and (
-            rule -> 'properties' ->> 'destinationPortRange' = '3389'
-            or rule -> 'properties' ->> 'destinationPortRange' = '*'
-            or (
-              rule -> 'properties' ->> 'destinationPortRange' is null
-              and (
-                rule -> 'properties' -> 'destinationPortRanges' @> '["3389"]'
-                or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
-              )
-            )
-          )
-          and (
-            rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
-            or (
-              rule -> 'properties' ->> 'sourceAddressPrefix' is null
-              and (
-                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
-              )
-            )
-          )
-        then name || ' allows unrestricted RDP access from the internet with rule: ' || (rule ->> 'name')
-        else name || ' prohibits RDP access from the internet.'
+        when has_restrictions then name || ' has public network access restricted.'
+        else name || ' does not restrict public network access.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      allow_rdp_rules;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
-  })
-}
-
-benchmark "network_access_public_ips" {
-  title         = "Public IPs"
-  description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
-  documentation = file("./perimeter/docs/network_access_public_ips.md")
-  children = [
-    control.network_public_ip_require_static_allocation,
-    control.network_public_ip_limit_usage
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-control "network_public_ip_limit_usage" {
-  title       = "Public IP addresses should be restricted in usage"
-  description = "Azure resources should limit the use of public IP addresses to only those that truly require internet connectivity. Minimize public IP usage to reduce your attack surface."
-
-  sql = <<-EOQ
-    select
-      ip.id as resource,
-      case
-        when ip.ip_address is not null then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when ip.ip_address is not null then ip.name || ' has a public IP address: ' || ip.ip_address
-        else ip.name || ' does not have a public IP address.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_public_ip ip
+      sql_servers_with_restrictions
       ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
+    service = "Azure/SQL"
   })
 }
 
-control "network_public_ip_require_static_allocation" {
-  title       = "Public IP addresses should use static allocation method"
-  description = "Azure public IP addresses should be configured with static allocation to ensure consistent addressing for security configurations like firewall rules."
+control "storage_account_restrict_public_network_access" {
+  title       = "Storage accounts should restrict public network access"
+  description = "Azure Storage accounts should be configured to restrict public network access through virtual network rules."
 
   sql = <<-EOQ
     select
-      ip.id as resource,
+      id as resource,
       case
-        when ip.public_ip_allocation_method = 'Dynamic' then 'alarm'
-        else 'ok'
+        when public_network_access = 'Disabled' then 'ok'
+        when public_network_access = 'Enabled' and jsonb_array_length(virtual_network_rules) > 0 then 'ok'
+        else 'alarm'
       end as status,
       case
-        when ip.public_ip_allocation_method = 'Dynamic' then ip.name || ' uses dynamic IP allocation.'
-        else ip.name || ' uses static IP allocation.'
+        when public_network_access = 'Disabled' then name || ' has public network access disabled.'
+        when public_network_access = 'Enabled' and jsonb_array_length(virtual_network_rules) > 0 then name || ' has access restricted to virtual networks.'
+        else name || ' allows unrestricted public network access.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_public_ip ip
+      azure_storage_account
       ${local.resource_group_filter_sql};
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
+    service = "Azure/Storage"
   })
-} 
+}
+
+control "cosmos_db_restrict_network_access" {
+  title       = "Cosmos DB should restrict network access"
+  description = "Azure Cosmos DB accounts should be configured with virtual network rules, firewall rules, or private endpoints to restrict network access."
+
+  sql = <<-EOQ
+    select
+      id as resource,
+      case
+        when public_network_access = 'Disabled' then 'ok'
+        when is_virtual_network_filter_enabled then 'ok'
+        when jsonb_array_length(ip_rules) > 0 then 'ok'
+        else 'alarm'
+      end as status,
+      case
+        when public_network_access = 'Disabled' then name || ' has public network access disabled.'
+        when is_virtual_network_filter_enabled then name || ' has virtual network filter enabled.'
+        when jsonb_array_length(ip_rules) > 0 then name || ' has IP firewall rules configured.'
+        else name || ' allows unrestricted network access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_cosmosdb_account
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/CosmosDB"
+  })
+}
+
+# control "aks_cluster_use_private_cluster" {
+#   title       = "AKS clusters should be private"
+#   description = "Azure Kubernetes Service clusters should be configured as private clusters to restrict API server access from the internet."
+
+#   sql = <<-EOQ
+#     select
+#       id as resource,
+#       case
+#         when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then 'ok'
+#         else 'alarm'
+#       end as status,
+#       case
+#         when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then name || ' is configured as a private cluster.'
+#         else name || ' is not configured as a private cluster.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       azure_kubernetes_cluster
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/AKS"
+#   })
+# }
+
+# control "virtual_network_peering_cross_subscription_shared" {
+#   title       = "VNet peering should only be established with trusted subscriptions"
+#   description = "Virtual network peering should only be configured between trusted subscriptions to prevent unauthorized network access."
+
+#   sql = <<-EOQ
+#     select
+#       id as resource,
+#       case
+#         when remote_virtual_network_id ~ (subscription_id || '/') then 'ok'
+#         when remote_virtual_network_id ~ any (($1)::text[]) then 'ok'
+#         else 'info'
+#       end as status,
+#       case
+#         when remote_virtual_network_id ~ (subscription_id || '/') then name || ' is peered within the same subscription.'
+#         when remote_virtual_network_id ~ any (($1)::text[]) then name || ' is peered with a trusted subscription.'
+#         else name || ' is peered with untrusted subscription ' || split_part(remote_virtual_network_id, '/subscriptions/', 2) || '.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       azure_virtual_network_peering
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   param "trusted_subscriptions" {
+#     description = "A list of trusted subscription IDs."
+#     default     = var.trusted_subscriptions
+#   }
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# benchmark "network_access_security_groups" {
+#   title         = "Security Group Access"
+#   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
+#   documentation = file("./perimeter/docs/network_access_security_groups.md")
+#   children = [
+#     control.network_security_group_rdp_prohibit_public_access,
+#     control.network_security_group_ssh_prohibit_public_access,
+#     control.network_security_group_restrict_ingress_common_ports_all,
+#     control.network_subnet_require_security_group
+#   ]
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     type = "Benchmark"
+#   })
+# }
+
+# control "network_subnet_require_security_group" {
+#   title       = "All subnets should be protected by a network security group"
+#   description = "Azure subnets should have a network security group (NSG) attached to control network traffic and implement security boundaries."
+
+#   sql = <<-EOQ
+#     select
+#       s.id as resource,
+#       case
+#         when s.network_security_group_id is null then 'alarm'
+#         else 'ok'
+#       end as status,
+#       case
+#         when s.network_security_group_id is null then s.name || ' has no network security group attached.'
+#         else s.name || ' has network security group attached.'
+#       end as reason
+#       ${local.common_dimensions_global_sql}
+#     from
+#       azure_subnet s
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# control "network_security_group_ssh_prohibit_public_access" {
+#   title       = "Network security groups should prohibit SSH access from the internet"
+#   description = "Azure network security groups should not allow unrestricted SSH (port 22) access from the internet to reduce the risk of brute force attacks."
+
+#   sql = <<-EOQ
+#     with ssh_security_rules as (
+#       select
+#         id,
+#         name,
+#         resource_group,
+#         _ctx,
+#         region,
+#         tags,
+#         subscription_id,
+#         security_rules
+#       from
+#         azure_network_security_group
+#       where
+#         jsonb_typeof(security_rules) = 'array'
+#     ),
+#     allow_ssh_rules as (
+#       select
+#         id,
+#         name,
+#         tags,
+#         resource_group,
+#         _ctx,
+#         region,
+#         subscription_id,
+#         jsonb_array_elements(security_rules) as rule
+#       from
+#         ssh_security_rules
+#       where
+#         jsonb_typeof(security_rules) = 'array'
+#         and jsonb_array_length(security_rules) > 0
+#     )
+#     select
+#       id as resource,
+#       case
+#         when rule -> 'properties' ->> 'access' = 'Allow'
+#           and rule -> 'properties' ->> 'direction' = 'Inbound'
+#           and (
+#             rule -> 'properties' ->> 'destinationPortRange' = '22'
+#             or rule -> 'properties' ->> 'destinationPortRange' = '*'
+#             or (
+#               rule -> 'properties' ->> 'destinationPortRange' is null
+#               and (
+#                 rule -> 'properties' -> 'destinationPortRanges' @> '["22"]'
+#                 or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
+#               )
+#             )
+#           )
+#           and (
+#             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+#             or (
+#               rule -> 'properties' ->> 'sourceAddressPrefix' is null
+#               and (
+#                 rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+#               )
+#             )
+#           )
+#         then 'alarm'
+#         else 'ok'
+#       end as status,
+#       case
+#         when rule -> 'properties' ->> 'access' = 'Allow'
+#           and rule -> 'properties' ->> 'direction' = 'Inbound'
+#           and (
+#             rule -> 'properties' ->> 'destinationPortRange' = '22'
+#             or rule -> 'properties' ->> 'destinationPortRange' = '*'
+#             or (
+#               rule -> 'properties' ->> 'destinationPortRange' is null
+#               and (
+#                 rule -> 'properties' -> 'destinationPortRanges' @> '["22"]'
+#                 or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
+#               )
+#             )
+#           )
+#           and (
+#             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+#             or (
+#               rule -> 'properties' ->> 'sourceAddressPrefix' is null
+#               and (
+#                 rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+#               )
+#             )
+#           )
+#         then name || ' allows unrestricted SSH access from the internet with rule: ' || (rule ->> 'name')
+#         else name || ' prohibits SSH access from the internet.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       allow_ssh_rules;
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# control "network_security_group_restrict_ingress_common_ports_all" {
+#   title       = "Network security groups should restrict ingress access on common ports from the internet"
+#   description = "Azure network security groups should not allow unrestricted access from the internet to common ports like 22 (SSH), 3389 (RDP), 1433 (SQL), 3306 (MySQL), 5432 (PostgreSQL), and other sensitive ports."
+
+#   sql = <<-EOQ
+#     with common_ports_rules as (
+#       select
+#         id,
+#         name,
+#         resource_group,
+#         _ctx,
+#         region,
+#         tags,
+#         subscription_id,
+#         count(
+#           case
+#             when rule -> 'properties' ->> 'access' = 'Allow'
+#               and rule -> 'properties' ->> 'direction' = 'Inbound'
+#               and (
+#                 rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
+#                 or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
+#                 or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+#                 or (
+#                   rule -> 'properties' ->> 'sourceAddressPrefix' is null
+#                   and (
+#                     rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+#                     or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+#                     or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+#                   )
+#                 )
+#               )
+#               and (
+#                 rule -> 'properties' ->> 'destinationPortRange' in ('22', '3389', '1433', '3306', '5432', '23', '25', '53', '110', '143', '993', '995', '1521', '1522', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '*')
+#                 or (
+#                   rule -> 'properties' ->> 'destinationPortRange' is null
+#                   and (
+#                     rule -> 'properties' -> 'destinationPortRanges' ?| array['22', '3389', '1433', '3306', '5432', '23', '25', '53', '110', '143', '993', '995', '1521', '1522', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '*']
+#                   )
+#                 )
+#               )
+#             then 1
+#           end
+#         ) as risky_rules_count
+#       from
+#         azure_network_security_group,
+#         jsonb_array_elements(security_rules) as rule
+#       where
+#         jsonb_typeof(security_rules) = 'array'
+#         and jsonb_array_length(security_rules) > 0
+#       group by
+#         id, name, resource_group, _ctx, region, tags, subscription_id
+#     )
+#     select
+#       id as resource,
+#       case
+#         when risky_rules_count = 0 then 'ok'
+#         else 'alarm'
+#       end as status,
+#       case
+#         when risky_rules_count = 0 then name || ' does not allow ingress access to common ports from the internet.'
+#         else name || ' contains ' || risky_rules_count || ' rule(s) that allow ingress access to common ports from the internet.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       common_ports_rules
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# control "network_security_group_rdp_prohibit_public_access" {
+#   title       = "Network security groups should prohibit RDP access from the internet"
+#   description = "Azure network security groups should not allow unrestricted RDP (port 3389) access from the internet to reduce the risk of brute force attacks."
+
+#   sql = <<-EOQ
+#     with rdp_security_rules as (
+#       select
+#         id,
+#         name,
+#         resource_group,
+#         _ctx,
+#         region,
+#         tags,
+#         subscription_id,
+#         security_rules
+#       from
+#         azure_network_security_group
+#       where
+#         jsonb_typeof(security_rules) = 'array'
+#     ),
+#     allow_rdp_rules as (
+#       select
+#         id,
+#         name,
+#         tags,
+#         resource_group,
+#         _ctx,
+#         region,
+#         subscription_id,
+#         jsonb_array_elements(security_rules) as rule
+#       from
+#         rdp_security_rules
+#       where
+#         jsonb_typeof(security_rules) = 'array'
+#         and jsonb_array_length(security_rules) > 0
+#     )
+#     select
+#       id as resource,
+#       case
+#         when rule -> 'properties' ->> 'access' = 'Allow'
+#           and rule -> 'properties' ->> 'direction' = 'Inbound'
+#           and (
+#             rule -> 'properties' ->> 'destinationPortRange' = '3389'
+#             or rule -> 'properties' ->> 'destinationPortRange' = '*'
+#             or (
+#               rule -> 'properties' ->> 'destinationPortRange' is null
+#               and (
+#                 rule -> 'properties' -> 'destinationPortRanges' @> '["3389"]'
+#                 or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
+#               )
+#             )
+#           )
+#           and (
+#             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+#             or (
+#               rule -> 'properties' ->> 'sourceAddressPrefix' is null
+#               and (
+#                 rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+#               )
+#             )
+#           )
+#         then 'alarm'
+#         else 'ok'
+#       end as status,
+#       case
+#         when rule -> 'properties' ->> 'access' = 'Allow'
+#           and rule -> 'properties' ->> 'direction' = 'Inbound'
+#           and (
+#             rule -> 'properties' ->> 'destinationPortRange' = '3389'
+#             or rule -> 'properties' ->> 'destinationPortRange' = '*'
+#             or (
+#               rule -> 'properties' ->> 'destinationPortRange' is null
+#               and (
+#                 rule -> 'properties' -> 'destinationPortRanges' @> '["3389"]'
+#                 or rule -> 'properties' -> 'destinationPortRanges' @> '["*"]'
+#               )
+#             )
+#           )
+#           and (
+#             rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
+#             or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
+#             or (
+#               rule -> 'properties' ->> 'sourceAddressPrefix' is null
+#               and (
+#                 rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
+#                 or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
+#               )
+#             )
+#           )
+#         then name || ' allows unrestricted RDP access from the internet with rule: ' || (rule ->> 'name')
+#         else name || ' prohibits RDP access from the internet.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       allow_rdp_rules;
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# benchmark "network_access_public_ips" {
+#   title         = "Public IPs"
+#   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
+#   documentation = file("./perimeter/docs/network_access_public_ips.md")
+#   children = [
+#     control.network_public_ip_require_static_allocation,
+#     control.network_public_ip_limit_usage,
+#     control.compute_vm_not_publicly_accessible,
+#     control.network_interface_not_publicly_accessible
+#   ]
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     type = "Benchmark"
+#   })
+# }
+
+# control "network_public_ip_limit_usage" {
+#   title       = "Public IP addresses should be restricted in usage"
+#   description = "Azure resources should limit the use of public IP addresses to only those that truly require internet connectivity. Minimize public IP usage to reduce your attack surface."
+
+#   sql = <<-EOQ
+#     select
+#       ip.id as resource,
+#       case
+#         when ip.ip_address is not null then 'alarm'
+#         else 'ok'
+#       end as status,
+#       case
+#         when ip.ip_address is not null then ip.name || ' has a public IP address: ' || ip.ip_address
+#         else ip.name || ' does not have a public IP address.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       azure_public_ip ip
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# control "network_public_ip_require_static_allocation" {
+#   title       = "Public IP addresses should use static allocation method"
+#   description = "Azure public IP addresses should be configured with static allocation to ensure consistent addressing for security configurations like firewall rules."
+
+#   sql = <<-EOQ
+#     select
+#       ip.id as resource,
+#       case
+#         when ip.public_ip_allocation_method = 'Dynamic' then 'alarm'
+#         else 'ok'
+#       end as status,
+#       case
+#         when ip.public_ip_allocation_method = 'Dynamic' then ip.name || ' uses dynamic IP allocation.'
+#         else ip.name || ' uses static IP allocation.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       azure_public_ip ip
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# }
+
+# control "compute_vm_not_publicly_accessible" {
+#   title       = "Virtual machines should not have public IP addresses"
+#   description = "Azure virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
+
+#   sql = <<-EOQ
+#     select
+#       vm.id as resource,
+#       case
+#         when jsonb_array_length(vm.public_ips) = 0 or vm.public_ips is null then 'ok'
+#         else 'alarm'
+#       end as status,
+#       case
+#         when jsonb_array_length(vm.public_ips) = 0 or vm.public_ips is null then vm.name || ' does not have public IP addresses.'
+#         else vm.name || ' has public IP addresses: ' || array_to_string(array(select jsonb_array_elements_text(vm.public_ips)), ', ')
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "vm.")}
+#     from
+#       azure_compute_virtual_machine vm
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Compute"
+#   })
+# }
+
+# control "network_interface_not_publicly_accessible" {
+#   title       = "Network interfaces should not have public IP addresses unless required"
+#   description = "Azure network interfaces should not be assigned public IP addresses unless explicitly required for the workload to minimize internet exposure."
+
+#   sql = <<-EOQ
+#     with nic_public_ips as (
+#       select
+#         ni.id,
+#         ni.name,
+#         ni.tags,
+#         ni.resource_group,
+#         ni._ctx,
+#         ni.region,
+#         ni.subscription_id,
+#         case
+#           when jsonb_path_exists(ni.ip_configurations, '$[*].properties.publicIPAddress.id') then 'has_public_ip'
+#           else 'no_public_ip'
+#         end as public_ip_status
+#       from
+#         azure_network_interface ni
+#     )
+#     select
+#       id as resource,
+#       case
+#         when public_ip_status = 'no_public_ip' then 'ok'
+#         else 'alarm'
+#       end as status,
+#       case
+#         when public_ip_status = 'no_public_ip' then name || ' does not have public IP addresses.'
+#         else name || ' has public IP addresses assigned.'
+#       end as reason
+#       ${local.tag_dimensions_sql}
+#       ${local.common_dimensions_sql}
+#     from
+#       nic_public_ips
+#       ${local.resource_group_filter_sql};
+#   EOQ
+
+#   tags = merge(local.azure_perimeter_common_tags, {
+#     service = "Azure/Network"
+#   })
+# } 

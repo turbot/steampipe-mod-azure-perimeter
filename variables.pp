@@ -8,6 +8,12 @@ locals {
   }
 }
 
+variable "trusted_subscriptions" {
+  type        = list(string)
+  default     = ["12345678-1234-1234-1234-123456789abc", "12345678-1234-1234-1234-123456789def"]
+  description = "A list of trusted Azure subscription IDs that resources can be shared with."
+}
+
 variable "common_dimensions" {
   type        = list(string)
   description = "A list of common dimensions to add to each control."
