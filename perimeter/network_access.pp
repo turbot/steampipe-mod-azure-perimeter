@@ -240,23 +240,21 @@ control "storage_account_restrict_public_network_access" {
 }
 
 control "cosmos_db_restrict_network_access" {
-  title       = "Cosmos DB should restrict network access"
-  description = "Azure Cosmos DB accounts should be configured with virtual network rules, firewall rules, or private endpoints to restrict network access."
+  title       = "Cosmos DB accounts should restrict public network access"
+  description = "Azure Cosmos DB accounts should be configured to restrict public network access through virtual network rules."
 
   sql = <<-EOQ
     select
       id as resource,
       case
         when public_network_access = 'Disabled' then 'ok'
-        when is_virtual_network_filter_enabled then 'ok'
-        when jsonb_array_length(ip_rules) > 0 then 'ok'
+        when public_network_access = 'Enabled' and jsonb_array_length(virtual_network_rules) > 0 then 'ok'
         else 'alarm'
       end as status,
       case
         when public_network_access = 'Disabled' then name || ' has public network access disabled.'
-        when is_virtual_network_filter_enabled then name || ' has virtual network filter enabled.'
-        when jsonb_array_length(ip_rules) > 0 then name || ' has IP firewall rules configured.'
-        else name || ' allows unrestricted network access.'
+        when public_network_access = 'Enabled' and jsonb_array_length(virtual_network_rules) > 0 then name || ' has access restricted to virtual networks.'
+        else name || ' allows unrestricted public network access.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
