@@ -5,8 +5,8 @@ benchmark "network_access" {
   children = [
     benchmark.network_access_general,
     benchmark.network_public_access,
-    # benchmark.network_access_public_ips,
-    # benchmark.network_access_security_groups
+    benchmark.network_access_public_ips,
+    benchmark.network_access_security_groups
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -22,9 +22,7 @@ benchmark "network_access_general" {
     control.network_watcher_enabled,
     control.application_gateway_waf_enabled,
     control.app_service_vnet_integration_enabled,
-    control.function_app_vnet_integration_enabled,
-    # control.aks_cluster_use_private_cluster,
-    # control.virtual_network_peering_cross_subscription_shared
+    control.function_app_vnet_integration_enabled
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -91,7 +89,7 @@ control "network_watcher_enabled" {
     service = "Azure/Network"
   })
 }
-//https://learn.microsoft.com/en-us/azure/web-application-firewall/ag/best-practices
+
 control "application_gateway_waf_enabled" {
   title       = "Application Gateway should have Web Application Firewall enabled"
   description = "Azure Application Gateway should have WAF enabled to protect web applications from common attacks and vulnerabilities."
@@ -120,7 +118,7 @@ control "application_gateway_waf_enabled" {
     service = "Azure/Network"
   })
 }
-//https://learn.microsoft.com/en-us/azure/virtual-network/vnet-integration-for-azure-services
+
 control "app_service_vnet_integration_enabled" {
   title       = "App Service should use VNet"
   description = "Azure App Service apps should be integrated with virtual networks to secure network communication and restrict outbound access."
@@ -283,74 +281,14 @@ control "cosmos_db_account_restrict_public_network_access" {
   })
 }
 
-# control "aks_cluster_use_private_cluster" {
-#   title       = "AKS clusters should be private"
-#   description = "Azure Kubernetes Service clusters should be configured as private clusters to restrict API server access from the internet."
-
-#   sql = <<-EOQ
-#     select
-#       id as resource,
-#       case
-#         when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then 'ok'
-#         else 'alarm'
-#       end as status,
-#       case
-#         when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then name || ' is configured as a private cluster.'
-#         else name || ' is not configured as a private cluster.'
-#       end as reason
-#       ${local.tag_dimensions_sql}
-#       ${local.common_dimensions_sql}
-#     from
-#       azure_kubernetes_cluster
-#       ${local.resource_group_filter_sql};
-#   EOQ
-
-#   tags = merge(local.azure_perimeter_common_tags, {
-#     service = "Azure/AKS"
-#   })
-# }
-
-# control "virtual_network_peering_cross_subscription_shared" {
-#   title       = "VNet peering should only be established with trusted subscriptions"
-#   description = "Virtual network peering should only be configured between trusted subscriptions to prevent unauthorized network access."
-
-#   sql = <<-EOQ
-#     select
-#       id as resource,
-#       case
-#         when remote_virtual_network_id ~ (subscription_id || '/') then 'ok'
-#         when remote_virtual_network_id ~ any (($1)::text[]) then 'ok'
-#         else 'info'
-#       end as status,
-#       case
-#         when remote_virtual_network_id ~ (subscription_id || '/') then name || ' is peered within the same subscription.'
-#         when remote_virtual_network_id ~ any (($1)::text[]) then name || ' is peered with a trusted subscription.'
-#         else name || ' is peered with untrusted subscription ' || split_part(remote_virtual_network_id, '/subscriptions/', 2) || '.'
-#       end as reason
-#       ${local.tag_dimensions_sql}
-#       ${local.common_dimensions_sql}
-#     from
-#       azure_virtual_network_peering
-#       ${local.resource_group_filter_sql};
-#   EOQ
-
-#   param "trusted_subscriptions" {
-#     description = "A list of trusted subscription IDs."
-#     default     = var.trusted_subscriptions
-#   }
-
-#   tags = merge(local.azure_perimeter_common_tags, {
-#     service = "Azure/Network"
-#   })
-# }
-
 benchmark "network_access_security_groups" {
   title         = "Security Group Access"
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
   documentation = file("./perimeter/docs/network_access_security_groups.md")
   children = [
     control.network_security_group_restrict_ingress_common_ports_all,
-    control.network_subnet_require_security_group
+    control.network_subnet_require_security_group,
+    control.network_security_group_prohibit_public_access,
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -465,8 +403,8 @@ benchmark "network_access_public_ips" {
   children = [
     control.network_public_ip_require_static_allocation,
     control.network_public_ip_limit_usage,
-    control.compute_vm_not_publicly_accessible,
-    control.network_interface_not_publicly_accessible
+    control.compute_vm_not_attached_to_public_ip,
+    control.network_interface_not_attached_to_public_ip
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -528,7 +466,7 @@ control "network_public_ip_require_static_allocation" {
   })
 }
 
-control "compute_vm_not_publicly_accessible" {
+control "compute_vm_not_attached_to_public_ip" {
   title       = "Virtual machines should not have public IP addresses"
   description = "Azure virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
 
@@ -555,7 +493,7 @@ control "compute_vm_not_publicly_accessible" {
   })
 }
 
-control "network_interface_not_publicly_accessible" {
+control "network_interface_not_attached_to_public_ip" {
   title       = "Network interfaces should not have public IP addresses unless required"
   description = "Azure network interfaces should not be assigned public IP addresses unless explicitly required for the workload to minimize internet exposure."
 
