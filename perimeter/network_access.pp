@@ -19,26 +19,12 @@ benchmark "network_access_general" {
   description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
   documentation = file("./perimeter/docs/network_access_general.md")
   children = [
-    control.network_watcher_enabled,
-    control.application_gateway_waf_enabled,
     control.app_service_vnet_integration_enabled,
-    control.function_app_vnet_integration_enabled
-  ]
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    type = "Benchmark"
-  })
-}
-
-benchmark "network_public_access" {
-  title         = "Network Public Access"
-  description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
-  documentation = file("./perimeter/docs/network_public_access.md")
-  children = [
-    control.sql_server_restrict_public_network_access,
-    control.storage_account_restrict_public_network_access,
-    control.cosmos_db_account_restrict_public_network_access,
-    control.container_registry_prohibit_public_access
+    control.application_gateway_waf_enabled,
+    control.function_app_vnet_integration_enabled,
+    control.network_watcher_enabled,
+    control.sql_server_firewall_rule_prohibit_public_access,
+    control.storage_account_network_rules_prohibit_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -119,6 +105,35 @@ control "application_gateway_waf_enabled" {
   })
 }
 
+control "network_application_gateway_waf_enabled" {
+  title       = "Application Gateway should have WAF enabled"
+  description = "Azure Application Gateway instances exposed to the internet should have Web Application Firewall (WAF) enabled to protect against common web vulnerabilities."
+
+  sql = <<-EOQ
+    select
+      g.id as resource,
+      case
+        when g.web_application_firewall_configuration is null then 'alarm'
+        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then 'alarm'
+        else 'ok'
+      end as status,
+      case
+        when g.web_application_firewall_configuration is null then g.name || ' has no WAF enabled.'
+        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then g.name || ' has WAF disabled.'
+        else g.name || ' has WAF enabled.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_application_gateway g
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/Network"
+  })
+}
+
 control "app_service_vnet_integration_enabled" {
   title       = "App Service should use VNet"
   description = "Azure App Service apps should be integrated with virtual networks to secure network communication and restrict outbound access."
@@ -170,6 +185,98 @@ control "function_app_vnet_integration_enabled" {
 
   tags = merge(local.azure_perimeter_common_tags, {
     service = "Azure/AppService"
+  })
+}
+
+control "sql_server_firewall_rule_prohibit_public_access" {
+  title       = "SQL Server firewall rules should prohibit public access"
+  description = "Azure SQL Server firewall rules should not allow unrestricted access from the internet (0.0.0.0 to 255.255.255.255)."
+
+  sql = <<-EOQ
+    with servers_with_rules as (
+      select
+        id,
+        name,
+        _ctx,
+        region,
+        resource_group,
+        subscription_id,
+        tags,
+        jsonb_array_elements(firewall_rules) as rule
+      from
+        azure_sql_server
+        ${local.resource_group_filter_sql}
+      where
+        firewall_rules is not null
+        and jsonb_array_length(firewall_rules) > 0
+    )
+    select
+      s.id as resource,
+      case
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then 'alarm'
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then 'alarm'
+        else 'ok'
+      end as status,
+      case
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing unrestricted internet access.'
+        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing Azure services access.'
+        else s.name || ' firewall rule ' || (rule ->> 'name') || ' does not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      servers_with_rules s;
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/SQL"
+  })
+}
+
+control "storage_account_network_rules_prohibit_public_access" {
+  title       = "Storage account network rules should prohibit public access"
+  description = "Azure Storage account network access rules should not allow unrestricted access from the internet when the default action is set to Allow."
+
+  sql = <<-EOQ
+    select
+      a.id as resource,
+      case
+        when network_rule_default_action = 'Allow' then 'alarm'
+        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
+          and jsonb_array_length(network_ip_rules) > 0 then 'info'
+        else 'ok'
+      end as status,
+      case
+        when network_rule_default_action = 'Allow' then a.name || ' network rules default action is Allow, which permits public access.'
+        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
+          and jsonb_array_length(network_ip_rules) > 0 then a.name || ' has network IP rules configured with default Deny action.'
+        else a.name || ' network rules do not allow unrestricted public access.'
+      end as reason
+      ${local.tag_dimensions_sql}
+      ${local.common_dimensions_sql}
+    from
+      azure_storage_account a
+      ${local.resource_group_filter_sql};
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/Storage"
+  })
+}
+
+benchmark "network_public_access" {
+  title         = "Network Public Access"
+  description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
+  documentation = file("./perimeter/docs/network_public_access.md")
+  children = [
+    control.sql_server_restrict_public_network_access,
+    control.storage_account_restrict_public_network_access,
+    control.cosmos_db_account_restrict_public_network_access,
+    control.container_registry_restrict_public_network_access
+  ]
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    type = "Benchmark"
   })
 }
 
@@ -227,8 +334,8 @@ control "storage_account_restrict_public_network_access" {
   })
 }
 
-control "container_registry_prohibit_public_access" {
-  title       = "Container registries should prohibit public access"
+control "container_registry_restrict_public_network_access" {
+  title       = "Container registries should restrict public network access"
   description = "Azure Container Registries should be configured with private endpoints and network rules to restrict public access."
 
   sql = <<-EOQ
@@ -287,8 +394,7 @@ benchmark "network_access_security_groups" {
   documentation = file("./perimeter/docs/network_access_security_groups.md")
   children = [
     control.network_security_group_restrict_ingress_common_ports_all,
-    control.network_subnet_require_security_group,
-    control.network_security_group_prohibit_public_access,
+    control.network_subnet_require_security_group
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -402,40 +508,12 @@ benchmark "network_access_public_ips" {
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
     control.network_public_ip_require_static_allocation,
-    control.network_public_ip_limit_usage,
     control.compute_vm_not_attached_to_public_ip,
     control.network_interface_not_attached_to_public_ip
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
     type = "Benchmark"
-  })
-}
-
-control "network_public_ip_limit_usage" {
-  title       = "Public IP addresses should be restricted in usage"
-  description = "Azure resources should limit the use of public IP addresses to only those that truly require internet connectivity. Minimize public IP usage to reduce your attack surface."
-
-  sql = <<-EOQ
-    select
-      ip.id as resource,
-      case
-        when ip.ip_address is not null then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when ip.ip_address is not null then ip.name || ' has a public IP address: ' || ip.ip_address
-        else ip.name || ' does not have a public IP address.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_public_ip ip
-      ${local.resource_group_filter_sql};
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
   })
 }
 
@@ -529,184 +607,6 @@ control "network_interface_not_attached_to_public_ip" {
     from
       nic_public_ips
       ${local.resource_group_filter_sql};
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
-  })
-}
-
-control "sql_server_firewall_rule_prohibit_public_access" {
-  title       = "SQL Server firewall rules should prohibit public access"
-  description = "Azure SQL Server firewall rules should not allow unrestricted access from the internet (0.0.0.0 to 255.255.255.255)."
-
-  sql = <<-EOQ
-    with servers_with_rules as (
-      select
-        id,
-        name,
-        _ctx,
-        region,
-        resource_group,
-        subscription_id,
-        tags,
-        jsonb_array_elements(firewall_rules) as rule
-      from
-        azure_sql_server
-        ${local.resource_group_filter_sql}
-      where
-        firewall_rules is not null
-        and jsonb_array_length(firewall_rules) > 0
-    )
-    select
-      s.id as resource,
-      case
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then 'alarm'
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing unrestricted internet access.'
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then s.name || ' has firewall rule ' || (rule ->> 'name') || ' allowing Azure services access.'
-        else s.name || ' firewall rule ' || (rule ->> 'name') || ' does not allow unrestricted public access.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      servers_with_rules s;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/SQL"
-  })
-}
-
-control "storage_account_network_rules_prohibit_public_access" {
-  title       = "Storage account network rules should prohibit public access"
-  description = "Azure Storage account network access rules should not allow unrestricted access from the internet when the default action is set to Allow."
-
-  sql = <<-EOQ
-    select
-      a.id as resource,
-      case
-        when network_rule_default_action = 'Allow' then 'alarm'
-        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
-          and jsonb_array_length(network_ip_rules) > 0 then 'info'
-        else 'ok'
-      end as status,
-      case
-        when network_rule_default_action = 'Allow' then a.name || ' network rules default action is Allow, which permits public access.'
-        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
-          and jsonb_array_length(network_ip_rules) > 0 then a.name || ' has network IP rules configured with default Deny action.'
-        else a.name || ' network rules do not allow unrestricted public access.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_storage_account a
-      ${local.resource_group_filter_sql};
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Storage"
-  })
-}
-
-
-control "network_application_gateway_waf_enabled" {
-  title       = "Application Gateway should have WAF enabled"
-  description = "Azure Application Gateway instances exposed to the internet should have Web Application Firewall (WAF) enabled to protect against common web vulnerabilities."
-
-  sql = <<-EOQ
-    select
-      g.id as resource,
-      case
-        when g.web_application_firewall_configuration is null then 'alarm'
-        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when g.web_application_firewall_configuration is null then g.name || ' has no WAF enabled.'
-        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then g.name || ' has WAF disabled.'
-        else g.name || ' has WAF enabled.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_application_gateway g
-      ${local.resource_group_filter_sql};
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
-  })
-}
-
-control "network_security_group_prohibit_public_access" {
-  title       = "Network security groups should prohibit unrestricted access from the internet"
-  description = "Network security groups (NSGs) should not have rules that allow unrestricted inbound access from the internet (0.0.0.0/0) to any port."
-
-  sql = <<-EOQ
-    with nsg_with_public_access as (
-      select
-        id,
-        name,
-        _ctx,
-        region,
-        resource_group,
-        subscription_id,
-        tags,
-        jsonb_array_elements(security_rules) as rule
-      from
-        azure_network_security_group
-        ${local.resource_group_filter_sql}
-      where
-        jsonb_typeof(security_rules) = 'array'
-    )
-    select
-      n.id as resource,
-      case
-        when rule -> 'properties' ->> 'access' = 'Allow'
-          and rule -> 'properties' ->> 'direction' = 'Inbound'
-          and (
-            rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
-            or (
-              rule -> 'properties' ->> 'sourceAddressPrefix' is null
-              and (
-                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
-              )
-            )
-          )
-        then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when rule -> 'properties' ->> 'access' = 'Allow'
-          and rule -> 'properties' ->> 'direction' = 'Inbound'
-          and (
-            rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
-            or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
-            or (
-              rule -> 'properties' ->> 'sourceAddressPrefix' is null
-              and (
-                rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
-                or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
-              )
-            )
-          )
-        then n.name || ' allows unrestricted inbound access with rule: ' || (rule ->> 'name')
-        else n.name || ' prohibits unrestricted inbound access.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      nsg_with_public_access n;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
