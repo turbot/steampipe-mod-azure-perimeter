@@ -105,35 +105,6 @@ control "application_gateway_waf_enabled" {
   })
 }
 
-control "network_application_gateway_waf_enabled" {
-  title       = "Application Gateway should have WAF enabled"
-  description = "Azure Application Gateway instances exposed to the internet should have Web Application Firewall (WAF) enabled to protect against common web vulnerabilities."
-
-  sql = <<-EOQ
-    select
-      g.id as resource,
-      case
-        when g.web_application_firewall_configuration is null then 'alarm'
-        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when g.web_application_firewall_configuration is null then g.name || ' has no WAF enabled.'
-        when (g.web_application_firewall_configuration ->> 'enabled')::boolean = false then g.name || ' has WAF disabled.'
-        else g.name || ' has WAF enabled.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      azure_application_gateway g
-      ${local.resource_group_filter_sql};
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
-  })
-}
-
 control "app_service_vnet_integration_enabled" {
   title       = "App Service should use VNet"
   description = "Azure App Service apps should be integrated with virtual networks to secure network communication and restrict outbound access."
