@@ -479,7 +479,7 @@ benchmark "network_access_public_ips" {
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
     control.network_public_ip_require_static_allocation,
-    control.compute_vm_not_attached_to_public_ip,
+    # control.compute_vm_not_attached_to_public_ip,
     control.network_interface_not_attached_to_public_ip
   ]
 
@@ -515,7 +515,7 @@ control "network_public_ip_require_static_allocation" {
   })
 }
 
-control "compute_vm_not_attached_to_public_ip" {
+control "compute_vm_no_public_ip" {
   title       = "Virtual machines should not have public IP addresses"
   description = "Azure virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
 

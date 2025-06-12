@@ -1,19 +1,7 @@
-variable "trusted_principal_ids" {
+variable "trusted_principal_display_names" {
   type        = list(string)
-  default     = ["12345678-1234-1234-1234-123456789abc", "87654321-1234-1234-1234-123456789def"]
-  description = "A list of trusted principal IDs (users, groups, service principals) that resources can be shared with."
-}
-
-variable "trusted_service_principal_ids" {
-  type        = list(string)
-  default     = ["12345678-abcd-efgh-ijkl-123456789abc", "87654321-abcd-efgh-ijkl-123456789def"]
-  description = "A list of trusted service principal IDs that can have elevated role assignments."
-}
-
-variable "privileged_roles" {
-  type        = list(string)
-  default     = ["Owner", "Contributor", "User Access Administrator", "Security Admin", "Global Administrator"]
-  description = "A list of privileged role names that should be monitored for trusted assignment."
+  default     = ["Cody", "Partha", "test-graph", "DevOps"]
+  description = "A list of trusted principal display names (users, groups, service principals) that resources can be shared with."
 }
 
 benchmark "shared_access" {
@@ -36,7 +24,6 @@ benchmark "rbac_shared_access" {
   documentation = file("./perimeter/docs/rbac_shared_access.md")
   children = [
     control.role_assignment_shared_with_trusted_principals,
-    control.role_assignment_service_principal_with_trusted_entities,
     control.role_assignment_cross_subscription_shared_with_trusted_subscriptions
   ]
 
@@ -50,7 +37,6 @@ benchmark "privileged_role_assignments" {
   description   = "Privileged roles like Owner, Contributor, and administrative roles should only be assigned to trusted principals and monitored carefully."
   documentation = file("./perimeter/docs/privileged_role_assignments.md")
   children = [
-    control.privileged_role_assignment_with_trusted_principals,
     control.owner_role_assignment_limit_scope,
     control.user_access_administrator_role_assignment_limit_scope
   ]
@@ -82,6 +68,28 @@ control "role_assignment_shared_with_trusted_principals" {
       where
         ra.principal_id is not null
     ),
+    role_assignments_with_user_details as (
+      select
+        ra.id,
+        ra.name,
+        ra.scope,
+        ra.principal_id,
+        ra.principal_type,
+        ra.role_name,
+        ra.subscription_id,
+        ra._ctx,
+        case 
+          when ra.principal_type = 'User' and u.display_name is not null then u.display_name
+          when ra.principal_type = 'ServicePrincipal' and sp.display_name is not null then sp.display_name
+          when ra.principal_type = 'Group' and g.display_name is not null then g.display_name
+          else ra.principal_id
+        end as principal_display_name
+      from
+        role_assignments_with_details ra
+        left join azuread_user u on ra.principal_id = u.id and ra.principal_type = 'User'
+        left join azuread_service_principal sp on ra.principal_id = sp.id and ra.principal_type = 'ServicePrincipal'
+        left join azuread_group g on ra.principal_id = g.id and ra.principal_type = 'Group'
+    ),
     untrusted_assignments as (
       select
         id,
@@ -90,14 +98,16 @@ control "role_assignment_shared_with_trusted_principals" {
         principal_id,
         principal_type,
         role_name,
+        principal_display_name,
         subscription_id,
         _ctx,
         case
-          when principal_id = any(($1)::text[]) then false
+          when principal_display_name = any(($1)::text[]) then false
+          when principal_display_name is null then true  -- Handle NULL case explicitly
           else true
         end as is_untrusted
       from
-        role_assignments_with_details
+        role_assignments_with_user_details
     )
     select
       id as resource,
@@ -107,83 +117,18 @@ control "role_assignment_shared_with_trusted_principals" {
       end as status,
       case
         when is_untrusted then 
-          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to untrusted principal ' || principal_id || '.'
+          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to untrusted principal ' || coalesce(principal_display_name, 'Unknown Principal') || ' on scope ' || scope || '.'
         else 
-          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to trusted principal ' || principal_id || '.'
+          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to trusted principal ' || coalesce(principal_display_name, 'Unknown Principal') || ' on scope ' || scope || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
       untrusted_assignments;
   EOQ
 
-  param "trusted_principal_ids" {
-    description = "A list of trusted principal IDs."
-    default     = var.trusted_principal_ids
-  }
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/RBAC"
-  })
-}
-// Service principals are non-human identities in Azure AD
-control "role_assignment_service_principal_with_trusted_entities" {
-  title       = "Service principal role assignments should only be granted to trusted service principals"
-  description = "Azure RBAC role assignments for service principals should only be granted to service principals that are part of the trusted list to prevent unauthorized application access."
-
-  sql = <<-EOQ
-    with service_principal_assignments as (
-      select
-        ra.id,
-        ra.name,
-        ra.scope,
-        ra.principal_id,
-        ra.role_definition_id,
-        rd.role_name,
-        ra.subscription_id,
-        ra._ctx
-      from
-        azure_role_assignment ra
-        left join azure_role_definition rd on ra.role_definition_id = rd.id
-      where
-        ra.principal_type = 'ServicePrincipal'
-        and ra.principal_id is not null
-    ),
-    untrusted_sp_assignments as (
-      select
-        id,
-        name,
-        scope,
-        principal_id,
-        role_name,
-        subscription_id,
-        _ctx,
-        case
-          when principal_id = any(($1)::text[]) then false
-          else true
-        end as is_untrusted
-      from
-        service_principal_assignments
-    )
-    select
-      id as resource,
-      case
-        when is_untrusted then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when is_untrusted then 
-          'Service principal role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to untrusted service principal ' || principal_id || '.'
-        else 
-          'Service principal role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to trusted service principal ' || principal_id || '.'
-      end as reason
-      ${local.common_dimensions_subscription_id_sql}
-    from
-      untrusted_sp_assignments;
-  EOQ
-
-  param "trusted_service_principal_ids" {
-    description = "A list of trusted service principal IDs."
-    default     = var.trusted_service_principal_ids
+  param "trusted_principal_display_names" {
+    description = "A list of trusted principal display names."
+    default     = var.trusted_principal_display_names
   }
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -267,78 +212,6 @@ control "role_assignment_cross_subscription_shared_with_trusted_subscriptions" {
   })
 }
 
-control "privileged_role_assignment_with_trusted_principals" {
-  title       = "Privileged role assignments should only be granted to trusted principals"
-  description = "Azure RBAC assignments for privileged roles (Owner, Contributor, User Access Administrator, etc.) should only be granted to trusted principals to prevent unauthorized administrative access."
-
-  sql = <<-EOQ
-    with privileged_role_assignments as (
-      select
-        ra.id,
-        ra.name,
-        ra.scope,
-        ra.principal_id,
-        ra.principal_type,
-        ra.role_definition_id,
-        rd.role_name,
-        ra.subscription_id,
-        ra._ctx
-      from
-        azure_role_assignment ra
-        left join azure_role_definition rd on ra.role_definition_id = rd.id
-      where
-        rd.role_name = any(($2)::text[])
-        and ra.principal_id is not null
-    ),
-    untrusted_privileged_assignments as (
-      select
-        id,
-        name,
-        scope,
-        principal_id,
-        principal_type,
-        role_name,
-        subscription_id,
-        _ctx,
-        case
-          when principal_id = any(($1)::text[]) then false
-          else true
-        end as is_untrusted
-      from
-        privileged_role_assignments
-    )
-    select
-      id as resource,
-      case
-        when is_untrusted then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when is_untrusted then 
-          'Privileged role assignment ' || name || ' grants ' || role_name || ' role to untrusted principal ' || principal_id || '.'
-        else 
-          'Privileged role assignment ' || name || ' grants ' || role_name || ' role to trusted principal ' || principal_id || '.'
-      end as reason
-      ${local.common_dimensions_subscription_id_sql}
-    from
-      untrusted_privileged_assignments;
-  EOQ
-
-  param "trusted_principal_ids" {
-    description = "A list of trusted principal IDs."
-    default     = var.trusted_principal_ids
-  }
-
-  param "privileged_roles" {
-    description = "A list of privileged role names."
-    default     = var.privileged_roles
-  }
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/RBAC"
-  })
-}
-
 control "owner_role_assignment_limit_scope" {
   title       = "Owner role assignments should be limited in scope"
   description = "Azure RBAC Owner role assignments should be limited to the minimum necessary scope. Subscription-level Owner assignments should be carefully monitored and justified."
@@ -367,6 +240,29 @@ control "owner_role_assignment_limit_scope" {
       where
         rd.role_name = 'Owner'
         and ra.principal_id is not null
+    ),
+    owner_assignments_with_names as (
+      select
+        ra.id,
+        ra.name,
+        ra.scope,
+        ra.principal_id,
+        ra.principal_type,
+        ra.role_name,
+        ra.subscription_id,
+        ra._ctx,
+        ra.scope_type,
+        case 
+          when ra.principal_type = 'User' and u.display_name is not null then u.display_name
+          when ra.principal_type = 'ServicePrincipal' and sp.display_name is not null then sp.display_name
+          when ra.principal_type = 'Group' and g.display_name is not null then g.display_name
+          else ra.principal_id
+        end as principal_display_name
+      from
+        owner_role_assignments ra
+        left join azuread_user u on ra.principal_id = u.id and ra.principal_type = 'User'
+        left join azuread_service_principal sp on ra.principal_id = sp.id and ra.principal_type = 'ServicePrincipal'
+        left join azuread_group g on ra.principal_id = g.id and ra.principal_type = 'Group'
     )
     select
       id as resource,
@@ -377,15 +273,15 @@ control "owner_role_assignment_limit_scope" {
       end as status,
       case
         when scope_type = 'subscription' then 
-          'Owner role assignment ' || name || ' has subscription-level scope for principal ' || principal_id || '.'
+          'Owner role assignment ' || name || ' has subscription-level scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
         when scope_type = 'resource_group' then 
-          'Owner role assignment ' || name || ' has resource group scope for principal ' || principal_id || '.'
+          'Owner role assignment ' || name || ' has resource group scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
         else 
-          'Owner role assignment ' || name || ' has limited scope for principal ' || principal_id || '.'
+          'Owner role assignment ' || name || ' has limited scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
-      owner_role_assignments;
+      owner_assignments_with_names;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -421,6 +317,29 @@ control "user_access_administrator_role_assignment_limit_scope" {
       where
         rd.role_name = 'User Access Administrator'
         and ra.principal_id is not null
+    ),
+    uaa_assignments_with_names as (
+      select
+        ra.id,
+        ra.name,
+        ra.scope,
+        ra.principal_id,
+        ra.principal_type,
+        ra.role_name,
+        ra.subscription_id,
+        ra._ctx,
+        ra.scope_type,
+        case 
+          when ra.principal_type = 'User' and u.display_name is not null then u.display_name
+          when ra.principal_type = 'ServicePrincipal' and sp.display_name is not null then sp.display_name
+          when ra.principal_type = 'Group' and g.display_name is not null then g.display_name
+          else ra.principal_id
+        end as principal_display_name
+      from
+        uaa_role_assignments ra
+        left join azuread_user u on ra.principal_id = u.id and ra.principal_type = 'User'
+        left join azuread_service_principal sp on ra.principal_id = sp.id and ra.principal_type = 'ServicePrincipal'
+        left join azuread_group g on ra.principal_id = g.id and ra.principal_type = 'Group'
     )
     select
       id as resource,
@@ -431,15 +350,15 @@ control "user_access_administrator_role_assignment_limit_scope" {
       end as status,
       case
         when scope_type = 'subscription' then 
-          'User Access Administrator role assignment ' || name || ' has subscription-level scope for principal ' || principal_id || '.'
+          'User Access Administrator role assignment ' || name || ' has subscription-level scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
         when scope_type = 'resource_group' then 
-          'User Access Administrator role assignment ' || name || ' has resource group scope for principal ' || principal_id || '.'
+          'User Access Administrator role assignment ' || name || ' has resource group scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
         else 
-          'User Access Administrator role assignment ' || name || ' has limited scope for principal ' || principal_id || '.'
+          'User Access Administrator role assignment ' || name || ' has limited scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
-      uaa_role_assignments;
+      uaa_assignments_with_names;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
