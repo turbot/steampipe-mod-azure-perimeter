@@ -59,8 +59,7 @@ control "storage_account_prohibit_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_storage_account a
-      ${local.resource_group_filter_sql};
+      azure_storage_account a;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -85,8 +84,7 @@ control "storage_blob_container_prohibit_public_access" {
       end as reason
       ${local.common_dimensions_global_sql}
     from
-      azure_storage_container c
-      ${local.resource_group_filter_sql};
+      azure_storage_container c;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -112,8 +110,7 @@ control "kubernetes_cluster_prohibit_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_kubernetes_cluster c
-      ${local.resource_group_filter_sql};
+      azure_kubernetes_cluster c;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -138,7 +135,6 @@ control "storage_account_cors_prohibit_public_access" {
         blob_service_logging -> 'cors' -> 'corsRules' as cors_rules
       from
         azure_storage_account
-        ${local.resource_group_filter_sql}
       where
         blob_service_logging -> 'cors' -> 'corsRules' is not null
         and jsonb_array_length(blob_service_logging -> 'cors' -> 'corsRules') > 0
@@ -187,7 +183,6 @@ control "cosmosdb_account_cors_prohibit_public_access" {
         cors
       from
         azure_cosmosdb_account
-        ${local.resource_group_filter_sql}
       where
         cors is not null
         and jsonb_array_length(cors) > 0

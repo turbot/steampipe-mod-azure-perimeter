@@ -46,7 +46,6 @@ control "network_watcher_enabled" {
         subscription_id
       from
         azure_virtual_network
-        ${local.resource_group_filter_sql}
     ),
     regions_with_watchers as (
       select distinct
@@ -96,8 +95,7 @@ control "application_gateway_waf_enabled" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_application_gateway
-      ${local.resource_group_filter_sql};
+      azure_application_gateway;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -123,8 +121,7 @@ control "app_service_vnet_integration_enabled" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_app_service_web_app
-      ${local.resource_group_filter_sql};
+      azure_app_service_web_app;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -150,8 +147,7 @@ control "function_app_vnet_integration_enabled" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_app_service_function_app
-      ${local.resource_group_filter_sql};
+      azure_app_service_function_app;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -176,7 +172,6 @@ control "sql_server_firewall_rule_prohibit_public_access" {
         jsonb_array_elements(firewall_rules) as rule
       from
         azure_sql_server
-        ${local.resource_group_filter_sql}
       where
         firewall_rules is not null
         and jsonb_array_length(firewall_rules) > 0
@@ -226,8 +221,7 @@ control "storage_account_network_rules_prohibit_public_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_storage_account a
-      ${local.resource_group_filter_sql};
+      azure_storage_account a;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -269,8 +263,7 @@ control "sql_server_restrict_public_network_access" {
     ${local.tag_dimensions_sql}
     ${local.common_dimensions_sql}
   from
-    azure_sql_server
-    ${local.resource_group_filter_sql};
+    azure_sql_server;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -296,8 +289,7 @@ control "storage_account_restrict_public_network_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_storage_account
-      ${local.resource_group_filter_sql};
+      azure_storage_account;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -323,8 +315,7 @@ control "container_registry_restrict_public_network_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_container_registry r
-      ${local.resource_group_filter_sql};
+      azure_container_registry r;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -350,8 +341,7 @@ control "cosmos_db_account_restrict_public_network_access" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_cosmosdb_account
-      ${local.resource_group_filter_sql};
+      azure_cosmosdb_account;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -390,8 +380,7 @@ control "network_subnet_require_security_group" {
       end as reason
       ${local.common_dimensions_global_sql}
     from
-      azure_subnet s
-      ${local.resource_group_filter_sql};
+      azure_subnet s;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -464,8 +453,7 @@ control "network_security_group_restrict_ingress_common_ports_all" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      common_ports_rules
-      ${local.resource_group_filter_sql};
+      common_ports_rules;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -506,8 +494,7 @@ control "network_public_ip_require_static_allocation" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      azure_public_ip ip
-      ${local.resource_group_filter_sql};
+      azure_public_ip ip;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -533,8 +520,7 @@ control "compute_vm_no_public_ip" {
       ${local.tag_dimensions_sql}
       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "vm.")}
     from
-      azure_compute_virtual_machine vm
-      ${local.resource_group_filter_sql};
+      azure_compute_virtual_machine vm;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -576,8 +562,7 @@ control "network_interface_not_attached_to_public_ip" {
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
     from
-      nic_public_ips
-      ${local.resource_group_filter_sql};
+      nic_public_ips;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
