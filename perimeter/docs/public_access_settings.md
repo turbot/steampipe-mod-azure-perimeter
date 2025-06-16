@@ -2,13 +2,9 @@
 
 Resources should not be publicly accessible or exposed to the internet through configurations and settings.
 
-This benchmark evaluates Azure resources that could be made publicly accessible through configuration flags, settings, and properties rather than through resource policies or IAM permissions. These settings often involve simple boolean flags or access level configurations that can inadvertently expose resources to the internet.
-
-Common examples include:
+This benchmark checks for:
 - Storage account blob public access settings
-- Database public network access flags  
-- Virtual machine public IP assignments
-- Container registry public access settings
-- Network security group rules allowing unrestricted access
+- Storage container blob public access settings
+- Kubernetes cluster public access settings
 
-Regular monitoring and validation of these settings helps maintain a secure perimeter around your Azure infrastructure. 
+Properly managing public access settings is essential for maintaining a secure perimeter. Public access settings should be carefully managed to ensure that only authorized principals have access to resources.

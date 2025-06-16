@@ -117,9 +117,9 @@ control "role_assignment_shared_with_trusted_principals" {
       end as status,
       case
         when is_untrusted then 
-          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to untrusted principal ' || coalesce(principal_display_name, 'Unknown Principal') || ' on scope ' || scope || '.'
+          'Role assignment ' || name || ' grants ' || role_name || ' role to untrusted principal ' || principal_display_name || ' on scope ' || scope || '.'
         else 
-          'Role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to trusted principal ' || coalesce(principal_display_name, 'Unknown Principal') || ' on scope ' || scope || '.'
+          'Role assignment ' || name || ' grants ' || role_name || ' role to trusted principal ' || principal_display_name || ' on scope ' || scope || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
@@ -193,9 +193,9 @@ control "role_assignment_cross_subscription_shared_with_trusted_subscriptions" {
       end as status,
       case
         when is_untrusted then 
-          'Cross-subscription role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to untrusted subscription ' || target_subscription_id || '.'
+          'Cross-subscription role assignment ' || name || ' grants ' || role_name || ' role to untrusted subscription ' || target_subscription_id || '.'
         else 
-          'Cross-subscription role assignment ' || name || ' grants ' || coalesce(role_name, 'Unknown Role') || ' role to trusted subscription ' || target_subscription_id || '.'
+          'Cross-subscription role assignment ' || name || ' grants ' || role_name || ' role to trusted subscription ' || target_subscription_id || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
@@ -273,11 +273,11 @@ control "owner_role_assignment_limit_scope" {
       end as status,
       case
         when scope_type = 'subscription' then 
-          'Owner role assignment ' || name || ' has subscription-level scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'Owner role assignment ' || name || ' has subscription-level scope for principal ' || principal_display_name || '.'
         when scope_type = 'resource_group' then 
-          'Owner role assignment ' || name || ' has resource group scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'Owner role assignment ' || name || ' has resource group scope for principal ' || principal_display_name || '.'
         else 
-          'Owner role assignment ' || name || ' has limited scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'Owner role assignment ' || name || ' has limited scope for principal ' || principal_display_name || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from
@@ -350,11 +350,11 @@ control "user_access_administrator_role_assignment_limit_scope" {
       end as status,
       case
         when scope_type = 'subscription' then 
-          'User Access Administrator role assignment ' || name || ' has subscription-level scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'User Access Administrator role assignment ' || name || ' has subscription-level scope for principal ' || principal_display_name || '.'
         when scope_type = 'resource_group' then 
-          'User Access Administrator role assignment ' || name || ' has resource group scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'User Access Administrator role assignment ' || name || ' has resource group scope for principal ' || principal_display_name || '.'
         else 
-          'User Access Administrator role assignment ' || name || ' has limited scope for principal ' || coalesce(principal_display_name, 'Unknown Principal') || '.'
+          'User Access Administrator role assignment ' || name || ' has limited scope for principal ' || principal_display_name || '.'
       end as reason
       ${local.common_dimensions_subscription_id_sql}
     from

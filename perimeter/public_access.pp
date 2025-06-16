@@ -17,7 +17,6 @@ benchmark "resource_policy_public_access" {
   description   = "Resources should not be publicly accessible through statements in their resource policies, access policies, or authorization rules."
   documentation = file("./perimeter/docs/resource_policy_public_access.md")
   children = [
-    control.storage_account_cors_prohibit_public_access,
     control.cosmosdb_account_cors_prohibit_public_access
   ]
 
@@ -115,54 +114,6 @@ control "kubernetes_cluster_prohibit_public_access" {
 
   tags = merge(local.azure_perimeter_common_tags, {
     service = "Azure/AKS"
-  })
-}
-
-control "storage_account_cors_prohibit_public_access" {
-  title       = "Storage account CORS policies should prohibit public access"
-  description = "Azure Storage account Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
-
-  sql = <<-EOQ
-    with cors_configured_accounts as (
-      select
-        id,
-        name,
-        _ctx,
-        region,
-        resource_group,
-        subscription_id,
-        tags,
-        blob_service_logging -> 'cors' -> 'corsRules' as cors_rules
-      from
-        azure_storage_account
-      where
-        blob_service_logging -> 'cors' -> 'corsRules' is not null
-        and jsonb_array_length(blob_service_logging -> 'cors' -> 'corsRules') > 0
-    )
-    select
-      a.id as resource,
-      case
-        when cors_rules is null then 'ok'
-        when jsonb_array_length(cors_rules) = 0 then 'ok'
-        when cors_rules @> '[{"allowedOrigins": ["*"]}]' then 'alarm'
-        when cors_rules::text like '%"allowedOrigins":%*%' then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when cors_rules is null then a.name || ' has no CORS rules configured.'
-        when jsonb_array_length(cors_rules) = 0 then a.name || ' has no CORS rules configured.'
-        when cors_rules @> '[{"allowedOrigins": ["*"]}]' then a.name || ' has CORS rules allowing access from any origin (*).'
-        when cors_rules::text like '%"allowedOrigins":%*%' then a.name || ' has CORS rules that may allow public access.'
-        else a.name || ' CORS rules do not allow unrestricted public access.'
-      end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
-    from
-      cors_configured_accounts a;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Storage"
   })
 }
 

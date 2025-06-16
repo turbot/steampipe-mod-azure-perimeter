@@ -24,7 +24,7 @@ benchmark "network_access_general" {
     control.function_app_vnet_integration_enabled,
     control.network_watcher_enabled,
     control.sql_server_firewall_rule_prohibit_public_access,
-    control.storage_account_network_rules_prohibit_public_access
+    control.storage_account_network_rules_default_action_allowed
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -179,8 +179,8 @@ control "sql_server_firewall_rule_prohibit_public_access" {
     select
       s.id as resource,
       case
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '255.255.255.255' then 'alarm'
-        when rule ->> 'startIpAddress' = '0.0.0.0' and rule ->> 'endIpAddress' = '0.0.0.0' then 'alarm'
+        when rule -> 'properties' ->> 'startIpAddress' = '0.0.0.0' and rule -> 'properties' ->> 'endIpAddress' = '255.255.255.255' then 'alarm'
+        when rule -> 'properties' ->> 'startIpAddress' = '0.0.0.0' and rule -> 'properties' ->> 'endIpAddress' = '0.0.0.0' then 'alarm'
         else 'ok'
       end as status,
       case
@@ -199,24 +199,20 @@ control "sql_server_firewall_rule_prohibit_public_access" {
   })
 }
 
-control "storage_account_network_rules_prohibit_public_access" {
-  title       = "Storage account network rules should prohibit public access"
-  description = "Azure Storage account network access rules should not allow unrestricted access from the internet when the default action is set to Allow."
+control "storage_account_network_rules_default_action_allowed" {
+  title       = "Storage account network rules default action should be set to Deny"
+  description = "Azure Storage account network rules default action should be set to Deny to prevent public access."
 
   sql = <<-EOQ
     select
       a.id as resource,
       case
         when network_rule_default_action = 'Allow' then 'alarm'
-        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
-          and jsonb_array_length(network_ip_rules) > 0 then 'info'
         else 'ok'
       end as status,
       case
-        when network_rule_default_action = 'Allow' then a.name || ' network rules default action is Allow, which permits public access.'
-        when network_rule_default_action = 'Deny' and network_ip_rules is not null 
-          and jsonb_array_length(network_ip_rules) > 0 then a.name || ' has network IP rules configured with default Deny action.'
-        else a.name || ' network rules do not allow unrestricted public access.'
+        when network_rule_default_action = 'Allow' then a.name || ' network rules default action is set to Allow, which permits public access.'
+        else a.name || ' network rules default action is set to Deny.'
       end as reason
       ${local.tag_dimensions_sql}
       ${local.common_dimensions_sql}
@@ -467,7 +463,7 @@ benchmark "network_access_public_ips" {
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
     control.network_public_ip_require_static_allocation,
-    # control.compute_vm_not_attached_to_public_ip,
+    control.compute_vm_no_public_ip,
     control.network_interface_not_attached_to_public_ip
   ]
 
