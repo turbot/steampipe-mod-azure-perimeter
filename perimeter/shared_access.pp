@@ -4,6 +4,12 @@ variable "trusted_principal_display_names" {
   description = "A list of trusted principal display names (users, groups, service principals) that resources can be shared with."
 }
 
+variable "trusted_subscriptions" {
+  type        = list(string)
+  default     = ["12345678-1234-1234-1234-123456789abc", "12345678-1234-1234-1234-123456789def"]
+  description = "A list of trusted Azure subscription IDs that resources can be shared with."
+}
+
 benchmark "shared_access" {
   title         = "Shared Access"
   description   = "Resources should only be shared with trusted entities through Azure Role-Based Access Control (RBAC), policy assignments, or resource policies."
