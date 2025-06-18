@@ -30,8 +30,8 @@ benchmark "public_network_access" {
 }
 
 control "sql_server_restrict_public_network_access" {
-  title       = "SQL server should restrict public network access"
-  description = "Azure SQL server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
+  title       = "SQL servers should restrict public network access"
+  description = "Azure SQL servers should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
 
   sql = <<-EOQ
     select
@@ -154,7 +154,8 @@ benchmark "security_group_access" {
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
   documentation = file("./perimeter/docs/security_group_access.md")
   children = [
-    control.network_security_group_restrict_ingress_common_ports_all
+    control.network_security_group_restrict_ingress_common_ports_all,
+    control.network_security_group_restrict_ingress_all_ports_tcp_udp_from_internet
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -294,6 +295,52 @@ control "network_security_group_restrict_ingress_common_ports_all" {
   })
 }
 
+control "network_security_group_restrict_ingress_all_ports_tcp_udp_from_internet" {
+  title       = "Network security groups should not allow TCP/UDP access to all ports (*) from the internet"
+  description = "Azure network security groups should not allow unrestricted TCP/UDP access from the internet to all ports (*). Rules that permit TCP or UDP access to all ports create an extremely broad attack surface."
+
+  sql = <<-EOQ
+    with all_ports_rules as (
+      select
+        distinct nsg.name sg_name
+      from
+        azure_network_security_group nsg,
+        jsonb_array_elements(security_rules) sg,
+        jsonb_array_elements_text(sg -> 'properties' -> 'destinationPortRanges' || (sg -> 'properties' -> 'destinationPortRange') :: jsonb) dport,
+        jsonb_array_elements_text(sg -> 'properties' -> 'sourceAddressPrefixes' || (sg -> 'properties' -> 'sourceAddressPrefix') :: jsonb) sip
+      where
+        sg -> 'properties' ->> 'access' = 'Allow'
+        and sg -> 'properties' ->> 'direction' = 'Inbound'
+        and sg -> 'properties' ->> 'protocol' in ('TCP', 'UDP')
+        and sip in ('*', '0.0.0.0', '0.0.0.0/0', 'Internet', 'any', '<nw>/0', '/0')
+        and dport = '*'
+    )
+    select
+      nsg.id as resource,
+      case
+        when apr.sg_name is null then 'ok'
+        else 'alarm'
+      end as status,
+      case
+        when apr.sg_name is null then nsg.name || ' restricts TCP/UDP access to all ports from the internet.'
+        else nsg.name || ' allows unrestricted TCP/UDP access to all ports (*) from the internet.'
+      end as reason
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
+    from
+      azure_network_security_group nsg
+      left join all_ports_rules apr on apr.sg_name = nsg.name,
+      azure_subscription sub
+    where
+      sub.subscription_id = nsg.subscription_id;
+  EOQ
+
+  tags = merge(local.azure_perimeter_common_tags, {
+    service = "Azure/Network"
+  })
+}
+
 benchmark "public_ips" {
   title         = "Public IPs"
   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
@@ -309,8 +356,8 @@ benchmark "public_ips" {
 }
 
 control "compute_vm_no_public_ip" {
-  title       = "Virtual machines should not have a public IP address"
-  description = "Azure virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
+  title       = "Compute Virtual machines should not have a public IP address"
+  description = "Azure compute virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
 
   sql = <<-EOQ
     select
@@ -339,7 +386,7 @@ control "compute_vm_no_public_ip" {
 }
 
 control "network_interface_not_attached_to_public_ip" {
-  title       = "Network interfaces should not have public IP addresses unless required"
+  title       = "Network interfaces should not have public IP addresses"
   description = "Azure network interfaces should not be assigned public IP addresses unless explicitly required for the workload to minimize internet exposure."
 
   sql = <<-EOQ
