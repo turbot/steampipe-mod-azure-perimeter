@@ -73,47 +73,21 @@ powerpipe benchmark list
 Run a benchmark:
 
 ```sh
-powerpipe benchmark run public_access
+powerpipe benchmark run network_access
 ```
 
 Run a specific control:
 
 ```sh
-powerpipe control run network_security_group_prohibit_public_access
+powerpipe control run network_security_group_restrict_ingress_common_ports_all
 ```
 
 Different output formats are also available, for more information please see
 [Output Formats](https://powerpipe.io/docs/reference/cli/benchmark#output-formats).
 
-### Configure Variables
-
-Several benchmarks have [input variables](https://powerpipe.io/docs/build/mod-variables#input-variables) that can be configured to better match your environment and requirements. Each variable has a default defined in its source file, e.g., `perimeter/shared_access.sp`, but these can be overwritten in several ways:
-
-It's easiest to setup your vars file, starting with the sample:
-
-```sh
-cp powerpipe.ppvars.example powerpipe.ppvars
-vi powerpipe.ppvars
-```
-
-Alternatively you can pass variables on the command line:
-
-```sh
-powerpipe benchmark run shared_access --var='trusted_tenants=["<tenant_id1>", "<tenant_id2>"]'
-```
-
-Or through environment variables:
-
-```sh
-export PP_VAR_trusted_tenants='["<tenant_id1>", "<tenant_id2>"]'
-powerpipe control run resource_shared_with_trusted_tenants
-```
-
-These are only some of the ways you can set variables. For a full list, please see [Passing Input Variables](https://powerpipe.io/docs/build/mod-variables#passing-input-variables).
-
 ### Common and Tag Dimensions
 
-The benchmark queries use common properties (like `subscription_id`, `connection_name` and `location`) and tags that are defined in the form of a default list of strings in the `variables.pp` file. These properties can be overwritten in several ways:
+The benchmark queries use common properties (like `connection_name`, `resource_group`, `region`, `subscription` and `subscription_id`) and tags that are defined in the form of a default list of strings in the `variables.sp` file. These properties can be overwritten in several ways:
 
 It's easiest to setup your vars file, starting with the sample:
 
@@ -125,14 +99,15 @@ vi powerpipe.ppvars
 Alternatively you can pass variables on the command line:
 
 ```sh
-powerpipe benchmark run public_access_settings --var 'common_dimensions=["subscription_id", "connection_name", "location"]'
+powerpipe benchmark run public_access_settings --var 'common_dimensions=[""subscription_id", "connection_name", "resource_group"]'sions=["subscription_id", "connection_name", "location"]'
 ```
 
 Or through environment variables:
 
 ```sh
-export PP_VAR_common_dimensions='["subscription_id", "connection_name", "location"]'
-powerpipe control run network_security_group_prohibit_public_access
+export PP_VAR_common_dimensions='["subscription_id", "connection_name", "resource_group"]'
+export PP_VAR_tag_dimensions='["Environment", "Owner"]'
+powerpipe control run network_security_group_restrict_ingress_common_ports_all
 ```
 
 ## Open Source & Contributing
