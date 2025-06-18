@@ -34,7 +34,7 @@ benchmark "public_access_settings" {
   documentation = file("./perimeter/docs/public_access_settings.md")
   children = [
     control.kubernetes_cluster_private_only,
-    control.storage_account_blob_containers_prohibit_public_access,
+    control.storage_account_should_prohibit_blob_public_access,
     control.storage_container_prohibit_public_access
   ]
 
@@ -43,8 +43,8 @@ benchmark "public_access_settings" {
   })
 }
 
-control "storage_account_blob_containers_prohibit_public_access" {
-  title       = "Storage account blob containers should prohibit public access"
+control "storage_account_should_prohibit_blob_public_access" {
+  title       = "Storage accounts should prohibit blob public access"
   description = "Azure Storage accounts should have the 'Allow Blob public access' property set to disabled to prevent unauthorized access."
 
   sql = <<-EOQ
