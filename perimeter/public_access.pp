@@ -32,7 +32,7 @@ benchmark "public_access_settings" {
   children = [
     control.storage_account_blob_containers_prohibit_public_access,
     control.storage_container_prohibit_public_access,
-    control.kubernetes_cluster_prohibit_public_access
+    control.kubernetes_cluster_prohibit_public_api_server_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -101,9 +101,9 @@ control "storage_container_prohibit_public_access" {
   })
 }
 
-control "kubernetes_cluster_prohibit_public_access" {
-  title       = "AKS clusters should prohibit public access"
-  description = "Azure Kubernetes Service (AKS) clusters should use private API server endpoints to restrict public access to the control plane."
+control "kubernetes_cluster_prohibit_public_api_server_access" {
+  title       = "AKS clusters should prohibit public API server access"
+  description = "Azure Kubernetes Service (AKS) clusters should have private cluster enabled to restrict worker node from API access for better security and isolation."
 
   sql = <<-EOQ
     select
@@ -113,8 +113,8 @@ control "kubernetes_cluster_prohibit_public_access" {
         else 'alarm'
       end as status,
       case
-        when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then c.name || ' API server is private.'
-        else c.name || ' API server is public.'
+        when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then c.name || ' has private cluster enabled.'
+        else c.name || ' has public API server access.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
