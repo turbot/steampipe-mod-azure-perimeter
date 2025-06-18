@@ -3,9 +3,9 @@ benchmark "network_access" {
   description   = "A network is essential to secure the network traffic and the cloud's environment from being exploited by unauthorized consumers. Network access controls help protect Azure resources from malicious or unauthorized traffic."
   documentation = file("./perimeter/docs/network_access.md")
   children = [
+    benchmark.public_ips,
     benchmark.public_network_access,
-    benchmark.network_access_public_ips,
-    benchmark.network_access_security_groups
+    benchmark.security_group_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -18,10 +18,10 @@ benchmark "public_network_access" {
   description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
   documentation = file("./perimeter/docs/public_network_access.md")
   children = [
-    control.sql_server_restrict_public_network_access,
-    control.storage_account_restrict_public_network_access,
+    control.container_registry_restrict_public_network_access,
     control.cosmos_db_account_restrict_public_network_access,
-    control.container_registry_restrict_public_network_access
+    control.sql_server_restrict_public_network_access,
+    control.storage_account_restrict_public_network_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -149,10 +149,10 @@ control "cosmos_db_account_restrict_public_network_access" {
   })
 }
 
-benchmark "network_access_security_groups" {
+benchmark "security_group_access" {
   title         = "Security Group Access"
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
-  documentation = file("./perimeter/docs/network_access_security_groups.md")
+  documentation = file("./perimeter/docs/security_group_access.md")
   children = [
     control.network_security_group_restrict_ingress_common_ports_all
   ]
@@ -294,10 +294,10 @@ control "network_security_group_restrict_ingress_common_ports_all" {
   })
 }
 
-benchmark "network_access_public_ips" {
+benchmark "public_ips" {
   title         = "Public IPs"
   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
-  documentation = file("./perimeter/docs/network_access_public_ips.md")
+  documentation = file("./perimeter/docs/public_ips.md")
   children = [
     control.compute_vm_no_public_ip,
     control.network_interface_not_attached_to_public_ip

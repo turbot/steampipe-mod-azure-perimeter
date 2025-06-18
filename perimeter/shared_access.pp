@@ -34,9 +34,9 @@ benchmark "rbac_shared_access" {
   description   = "Azure Role-Based Access Control (RBAC) helps you manage who has access to Azure resources. Role assignments should only be granted to trusted principals."
   documentation = file("./perimeter/docs/rbac_shared_access.md")
   children = [
-    control.role_assignment_shared_with_trusted_users,
     control.role_assignment_shared_with_trusted_groups,
     control.role_assignment_shared_with_trusted_service_principals,
+    control.role_assignment_shared_with_trusted_users
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
