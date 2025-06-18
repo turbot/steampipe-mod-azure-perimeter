@@ -35,19 +35,23 @@ control "sql_server_restrict_public_network_access" {
 
   sql = <<-EOQ
     select
-      id as resource,
+      s.id as resource,
     case
       when public_network_access = 'Disabled' then 'ok'
       else 'alarm'
     end as status,
     case
-      when public_network_access = 'Disabled' then name || ' has public network access disabled.'
-      else name || ' has public network access enabled.'
+      when public_network_access = 'Disabled' then s.name || ' has public network access disabled.'
+      else s.name || ' has public network access enabled.'
     end as reason
-    ${local.tag_dimensions_sql}
-    ${local.common_dimensions_sql}
+    ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "s.")}
+    ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "s.")}
+    ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
   from
-    azure_sql_server;
+    azure_sql_server s,
+    azure_subscription sub
+  where
+    sub.subscription_id = s.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -61,19 +65,23 @@ control "storage_account_restrict_public_network_access" {
 
   sql = <<-EOQ
     select
-      id as resource,
+      sa.id as resource,
       case
         when public_network_access = 'Disabled' then 'ok'
         else 'alarm'
       end as status,
       case
-        when public_network_access = 'Disabled' then name || ' has public network access disabled.'
-        else name || ' has public network access enabled.'
+        when public_network_access = 'Disabled' then sa.name || ' has public network access disabled.'
+        else sa.name || ' has public network access enabled.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "sa.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "sa.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_storage_account;
+      azure_storage_account sa,
+      azure_subscription sub
+    where
+      sub.subscription_id = sa.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -96,10 +104,14 @@ control "container_registry_restrict_public_network_access" {
         when public_network_access = 'Disabled' then r.name || ' prohibits public network access.'
         else r.name || ' allows public network access.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "r.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "r.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_container_registry r;
+      azure_container_registry r,
+      azure_subscription sub
+    where
+      sub.subscription_id = r.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -113,19 +125,23 @@ control "cosmos_db_account_restrict_public_network_access" {
 
   sql = <<-EOQ
     select
-      id as resource,
+      c.id as resource,
       case
         when public_network_access = 'Disabled' then 'ok'
         else 'alarm'
       end as status,
       case
-        when public_network_access = 'Disabled' then name || ' has public network access disabled.'
-        else name || ' has public network access enabled.'
+        when public_network_access = 'Disabled' then c.name || ' has public network access disabled.'
+        else c.name || ' has public network access enabled.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_cosmosdb_account;
+      azure_cosmosdb_account c,
+      azure_subscription sub
+    where
+      sub.subscription_id = c.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -162,9 +178,13 @@ control "network_subnet_require_security_group" {
         when s.network_security_group_id is null then s.name || ' has no network security group attached.'
         else s.name || ' has network security group attached.'
       end as reason
-      ${local.common_dimensions_global_sql}
+      ${replace(local.common_dimensions_global_qualifier_sql, "__QUALIFIER__", "s.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_subnet s;
+      azure_subnet s,
+      azure_subscription sub
+    where
+      s.subscription_id = sub.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -204,40 +224,41 @@ control "network_security_group_restrict_ingress_common_ports_all" {
                 )
               )
               and (
-                rule -> 'properties' ->> 'destinationPortRange' in ('20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080')
+                (
+                  rule -> 'properties' ->> 'destinationPortRange' in ('22', '3389', '1433', '3306', '5432', '1521', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '50070')
+                  or rule -> 'properties' ->> 'destinationPortRange' = '*'
+                )
                 or (
-                  rule -> 'properties' ->> 'destinationPortRange' is null
-                  and (
-                    rule -> 'properties' -> 'destinationPortRanges' ?| array['20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080']
-                  )
+                  rule -> 'properties' -> 'destinationPortRanges' ?| array['22', '3389', '1433', '3306', '5432', '1521', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '50070', '*']
                 )
               )
             then 1
           end
-        ) as risky_rules_count
+        ) as unrestricted_common_ports_count
       from
         azure_network_security_group,
         jsonb_array_elements(security_rules) as rule
-      where
-        jsonb_typeof(security_rules) = 'array'
-        and jsonb_array_length(security_rules) > 0
       group by
         id, name, resource_group, _ctx, region, tags, subscription_id
     )
     select
-      id as resource,
+      nsg.id as resource,
       case
-        when risky_rules_count = 0 then 'ok'
+        when unrestricted_common_ports_count = 0 then 'ok'
         else 'alarm'
       end as status,
       case
-        when risky_rules_count = 0 then name || ' does not allow ingress access to common ports from the internet.'
-        else name || ' contains ' || risky_rules_count || ' rule(s) that allow ingress access to common ports from the internet.'
+        when unrestricted_common_ports_count = 0 then nsg.name || ' restricts access to common ports from the internet.'
+        else nsg.name || ' allows unrestricted access to ' || unrestricted_common_ports_count || ' common port(s) from the internet.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      common_ports_rules;
+      common_ports_rules nsg,
+      azure_subscription sub
+    where
+      sub.subscription_id = nsg.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -275,10 +296,14 @@ control "network_public_ip_require_static_allocation" {
         when ip.public_ip_allocation_method = 'Dynamic' then ip.name || ' uses dynamic IP allocation.'
         else ip.name || ' uses static IP allocation.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "ip.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "ip.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_public_ip ip;
+      azure_public_ip ip,
+      azure_subscription sub
+    where
+      sub.subscription_id = ip.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -301,10 +326,14 @@ control "compute_vm_no_public_ip" {
         when jsonb_array_length(vm.public_ips) = 0 or vm.public_ips is null then vm.name || ' does not have public IP addresses.'
         else vm.name || ' has public IP addresses: ' || array_to_string(array(select jsonb_array_elements_text(vm.public_ips)), ', ')
       end as reason
-      ${local.tag_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "vm.")}
       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "vm.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_compute_virtual_machine vm;
+      azure_compute_virtual_machine vm,
+      azure_subscription sub
+    where
+      sub.subscription_id = vm.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -334,19 +363,23 @@ control "network_interface_not_attached_to_public_ip" {
         azure_network_interface ni
     )
     select
-      id as resource,
+      nip.id as resource,
       case
         when public_ip_status = 'no_public_ip' then 'ok'
         else 'alarm'
       end as status,
       case
-        when public_ip_status = 'no_public_ip' then name || ' does not have public IP addresses.'
-        else name || ' has public IP addresses assigned.'
+        when public_ip_status = 'no_public_ip' then nip.name || ' does not have public IP addresses.'
+        else nip.name || ' has public IP addresses assigned.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "nip.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "nip.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      nic_public_ips;
+      nic_public_ips nip,
+      azure_subscription sub
+    where
+      sub.subscription_id = nip.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {

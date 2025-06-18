@@ -94,15 +94,19 @@ control "role_assignment_shared_with_trusted_users" {
         role_assignments_with_user_details
     )
     select
-      id as resource,
+      ua.id as resource,
       case when is_untrusted then 'alarm' else 'ok' end as status,
       case
-        when is_untrusted then 'Role assignment ' || name || ' grants ' || role_name || ' role to untrusted user ' || user_principal_name || ' on scope ' || scope || '.'
-        else 'Role assignment ' || name || ' grants ' || role_name || ' role to trusted user ' || user_principal_name || ' on scope ' || scope || '.'
+        when is_untrusted then 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to untrusted user ' || user_principal_name || ' on scope ' || ua.scope || '.'
+        else 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to trusted user ' || user_principal_name || ' on scope ' || ua.scope || '.'
       end as reason
-      ${local.common_dimensions_subscription_id_sql}
+      ${replace(local.common_dimensions_subscription_id_qualifier_sql, "__QUALIFIER__", "ua.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      untrusted_assignments;
+      untrusted_assignments ua,
+      azure_subscription sub
+    where
+      sub.subscription_id = ua.subscription_id;
   EOQ
 
   param "trusted_user_principal_names" {
@@ -165,15 +169,19 @@ control "role_assignment_shared_with_trusted_groups" {
         role_assignments_with_group_details
     )
     select
-      id as resource,
+      ua.id as resource,
       case when is_untrusted then 'alarm' else 'ok' end as status,
       case
-        when is_untrusted then 'Role assignment ' || name || ' grants ' || role_name || ' role to untrusted group ' || group_name || ' on scope ' || scope || '.'
-        else 'Role assignment ' || name || ' grants ' || role_name || ' role to trusted group ' || group_name || ' on scope ' || scope || '.'
+        when is_untrusted then 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to untrusted group ' || group_name || ' on scope ' || ua.scope || '.'
+        else 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to trusted group ' || group_name || ' on scope ' || ua.scope || '.'
       end as reason
-      ${local.common_dimensions_subscription_id_sql}
+      ${replace(local.common_dimensions_subscription_id_qualifier_sql, "__QUALIFIER__", "ua.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      untrusted_assignments;
+      untrusted_assignments ua,
+      azure_subscription sub
+    where
+      sub.subscription_id = ua.subscription_id;
   EOQ
 
   param "trusted_group_names" {
@@ -236,15 +244,19 @@ control "role_assignment_shared_with_trusted_service_principals" {
         role_assignments_with_sp_details
     )
     select
-      id as resource,
+      ua.id as resource,
       case when is_untrusted then 'alarm' else 'ok' end as status,
       case
-        when is_untrusted then 'Role assignment ' || name || ' grants ' || role_name || ' role to untrusted service principal ' || sp_name || ' on scope ' || scope || '.'
-        else 'Role assignment ' || name || ' grants ' || role_name || ' role to trusted service principal ' || sp_name || ' on scope ' || scope || '.'
+        when is_untrusted then 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to untrusted service principal ' || ua.sp_name || ' on scope ' || ua.scope || '.'
+        else 'Role assignment ' || ua.name || ' grants ' || ua.role_name || ' role to trusted service principal ' || ua.sp_name || ' on scope ' || ua.scope || '.'
       end as reason
-      ${local.common_dimensions_subscription_id_sql}
+      ${replace(local.common_dimensions_subscription_id_qualifier_sql, "__QUALIFIER__", "ua.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      untrusted_assignments;
+      untrusted_assignments ua,
+      azure_subscription sub
+    where
+      sub.subscription_id = ua.subscription_id;
   EOQ
 
   param "trusted_service_principal_names" {

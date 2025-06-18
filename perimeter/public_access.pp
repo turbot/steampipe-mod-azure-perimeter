@@ -55,10 +55,14 @@ control "storage_account_prohibit_blob_public_access" {
         when allow_blob_public_access = false then a.name || ' prohibits public access to blobs.'
         else a.name || ' allows public access to blobs.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_storage_account a;
+      azure_storage_account a,
+      azure_subscription sub
+    where
+      sub.subscription_id = a.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -81,9 +85,14 @@ control "storage_container_prohibit_public_access" {
         when c.public_access = 'None' then c.name || ' prohibits public access.'
         else c.name || ' allows public ' || c.public_access || ' access.'
       end as reason
-      ${local.common_dimensions_global_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_global_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_storage_container c;
+      azure_storage_container c,
+      azure_subscription sub
+    where
+      sub.subscription_id = c.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -106,10 +115,14 @@ control "kubernetes_cluster_prohibit_public_access" {
         when api_server_access_profile ->> 'enablePrivateCluster' = 'true' then c.name || ' API server is private.'
         else c.name || ' API server is public.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      azure_kubernetes_cluster c;
+      azure_kubernetes_cluster c,
+      azure_subscription sub
+    where
+      sub.subscription_id = c.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -154,10 +167,14 @@ control "cosmosdb_account_cors_prohibit_public_access" {
         when cors::text like '%"allowedOrigins":"*"%' then c.name || ' has CORS rules that may allow public access.'
         else c.name || ' CORS rules do not allow unrestricted public access.'
       end as reason
-      ${local.tag_dimensions_sql}
-      ${local.common_dimensions_sql}
+      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
+      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      cors_configured_accounts c;
+      cors_configured_accounts c,
+      azure_subscription sub
+    where
+      sub.subscription_id = c.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
