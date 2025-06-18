@@ -3,7 +3,7 @@ benchmark "network_access" {
   description   = "A network is essential to secure the network traffic and the cloud's environment from being exploited by unauthorized consumers. Network access controls help protect Azure resources from malicious or unauthorized traffic."
   documentation = file("./perimeter/docs/network_access.md")
   children = [
-    benchmark.network_public_access,
+    benchmark.public_network_access,
     benchmark.network_access_public_ips,
     benchmark.network_access_security_groups
   ]
@@ -13,10 +13,10 @@ benchmark "network_access" {
   })
 }
 
-benchmark "network_public_access" {
-  title         = "Network Public Access"
+benchmark "public_network_access" {
+  title         = "Public Network Access"
   description   = "Azure resources should implement proper network controls to protect against unauthorized network access."
-  documentation = file("./perimeter/docs/network_public_access.md")
+  documentation = file("./perimeter/docs/public_network_access.md")
   children = [
     control.sql_server_restrict_public_network_access,
     control.storage_account_restrict_public_network_access,

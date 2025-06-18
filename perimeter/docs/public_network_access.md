@@ -1,4 +1,4 @@
-## Network Public Access
+## Public Network Access
 
 Azure resources should implement proper network controls to protect against unauthorized network access.
 
