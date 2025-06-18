@@ -4,7 +4,7 @@ benchmark "public_access" {
   documentation = file("./perimeter/docs/public_access.md")
   children = [
     benchmark.public_access_settings,
-    benchmark.resource_policy_public_access
+    benchmark.resource_cors_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
