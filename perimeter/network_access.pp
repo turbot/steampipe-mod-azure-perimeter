@@ -299,43 +299,12 @@ benchmark "network_access_public_ips" {
   description   = "Public IP addresses in Azure should be carefully managed to reduce the attack surface of your resources."
   documentation = file("./perimeter/docs/network_access_public_ips.md")
   children = [
-    control.network_public_ip_require_static_allocation,
     control.compute_vm_no_public_ip,
     control.network_interface_not_attached_to_public_ip
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
     type = "Benchmark"
-  })
-}
-
-control "network_public_ip_require_static_allocation" {
-  title       = "Public IP addresses should use static allocation method"
-  description = "Azure public IP addresses should be configured with static allocation to ensure consistent addressing for security configurations like firewall rules."
-
-  sql = <<-EOQ
-    select
-      ip.id as resource,
-      case
-        when ip.public_ip_allocation_method = 'Dynamic' then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when ip.public_ip_allocation_method = 'Dynamic' then ip.name || ' uses dynamic IP allocation.'
-        else ip.name || ' uses static IP allocation.'
-      end as reason
-      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "ip.")}
-      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "ip.")}
-      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
-    from
-      azure_public_ip ip,
-      azure_subscription sub
-    where
-      sub.subscription_id = ip.subscription_id;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
   })
 }
 
