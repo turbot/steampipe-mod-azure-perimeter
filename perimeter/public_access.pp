@@ -30,7 +30,7 @@ benchmark "public_access_settings" {
   description   = "Resources should not be publicly accessible or exposed to the internet through configurations and settings."
   documentation = file("./perimeter/docs/public_access_settings.md")
   children = [
-    control.storage_account_prohibit_blob_public_access,
+    control.storage_account_blob_containers_prohibit_public_access,
     control.storage_container_prohibit_public_access,
     control.kubernetes_cluster_prohibit_public_access
   ]
@@ -40,19 +40,19 @@ benchmark "public_access_settings" {
   })
 }
 
-control "storage_account_prohibit_blob_public_access" {
-  title       = "Storage accounts should prohibit blob public access"
+control "storage_account_blob_containers_prohibit_public_access" {
+  title       = "Storage account blob containers should prohibit public access"
   description = "Azure Storage accounts should have the 'Allow Blob public access' property set to disabled to prevent unauthorized access."
 
   sql = <<-EOQ
     select
       a.id as resource,
       case
-        when allow_blob_public_access = false then 'ok'
+        when not allow_blob_public_access then 'ok'
         else 'alarm'
       end as status,
       case
-        when allow_blob_public_access = false then a.name || ' prohibits public access to blobs.'
+        when not allow_blob_public_access then a.name || ' prohibits public access to blobs.'
         else a.name || ' allows public access to blobs.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
@@ -71,8 +71,8 @@ control "storage_account_prohibit_blob_public_access" {
 }
 
 control "storage_container_prohibit_public_access" {
-  title       = "Storage containers of blob storage service should prohibit public access"
-  description = "Storage containers of blob storage service should have their public access level set to 'None' to prevent unauthorized access."
+  title       = "Storage containers should prohibit public access"
+  description = "Storage containers should have their public access level set to 'None' to prevent unauthorized access."
 
   sql = <<-EOQ
     select
@@ -83,7 +83,8 @@ control "storage_container_prohibit_public_access" {
       end as status,
       case
         when c.public_access = 'None' then c.name || ' prohibits public access.'
-        else c.name || ' allows public ' || c.public_access || ' access.'
+        when c.public_access = 'Blob' then c.name || ' allows public blob access.'
+        when c.public_access = 'Container' then c.name || ' allows full public container access.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "c.")}
       ${replace(local.common_dimensions_global_qualifier_sql, "__QUALIFIER__", "c.")}

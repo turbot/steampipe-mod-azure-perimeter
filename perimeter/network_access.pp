@@ -30,8 +30,8 @@ benchmark "public_network_access" {
 }
 
 control "sql_server_restrict_public_network_access" {
-  title       = "SQL Server should restrict public network access"
-  description = "Azure SQL Server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
+  title       = "SQL server should restrict public network access"
+  description = "Azure SQL server should be configured to restrict public network access through firewall rules, virtual network rules, private endpoints, or by disabling public network access entirely."
 
   sql = <<-EOQ
     select
@@ -154,41 +154,11 @@ benchmark "network_access_security_groups" {
   description   = "Network security groups should be configured to protect Azure resources from unwanted network access."
   documentation = file("./perimeter/docs/network_access_security_groups.md")
   children = [
-    control.network_security_group_restrict_ingress_common_ports_all,
-    control.network_subnet_require_security_group
+    control.network_security_group_restrict_ingress_common_ports_all
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
     type = "Benchmark"
-  })
-}
-
-control "network_subnet_require_security_group" {
-  title       = "All subnets should be protected by a network security group"
-  description = "Azure subnets should have a network security group (NSG) attached to control network traffic and implement security boundaries."
-
-  sql = <<-EOQ
-    select
-      s.id as resource,
-      case
-        when s.network_security_group_id is null then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when s.network_security_group_id is null then s.name || ' has no network security group attached.'
-        else s.name || ' has network security group attached.'
-      end as reason
-      ${replace(local.common_dimensions_global_qualifier_sql, "__QUALIFIER__", "s.")}
-      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
-    from
-      azure_subnet s,
-      azure_subscription sub
-    where
-      s.subscription_id = sub.subscription_id;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/Network"
   })
 }
 
@@ -225,11 +195,14 @@ control "network_security_group_restrict_ingress_common_ports_all" {
               )
               and (
                 (
-                  rule -> 'properties' ->> 'destinationPortRange' in ('22', '3389', '1433', '3306', '5432', '1521', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '50070')
-                  or rule -> 'properties' ->> 'destinationPortRange' = '*'
+                  rule -> 'properties' ->> 'destinationPortRange' in ('20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080')
                 )
                 or (
-                  rule -> 'properties' -> 'destinationPortRanges' ?| array['22', '3389', '1433', '3306', '5432', '1521', '5984', '6379', '7000', '7001', '8020', '8086', '8888', '9042', '9160', '9200', '9300', '11211', '27017', '27018', '27019', '50070', '*']
+                rule -> 'properties' ->> 'destinationPortRange' is null
+                and (
+                  rule -> 'properties' -> 'destinationPortRanges' ?| array['20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080']
+                  )
+
                 )
               )
             then 1
@@ -312,7 +285,7 @@ control "network_public_ip_require_static_allocation" {
 }
 
 control "compute_vm_no_public_ip" {
-  title       = "Virtual machines should not have public IP addresses"
+  title       = "Virtual machines should not have a public IP address"
   description = "Azure virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
 
   sql = <<-EOQ
