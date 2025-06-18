@@ -169,66 +169,121 @@ control "network_security_group_restrict_ingress_common_ports_all" {
   sql = <<-EOQ
     with common_ports_rules as (
       select
-        id,
-        name,
-        resource_group,
-        _ctx,
-        region,
-        tags,
-        subscription_id,
-        count(
-          case
-            when rule -> 'properties' ->> 'access' = 'Allow'
-              and rule -> 'properties' ->> 'direction' = 'Inbound'
-              and (
-                rule -> 'properties' ->> 'sourceAddressPrefix' = '*'
-                or rule -> 'properties' ->> 'sourceAddressPrefix' = '0.0.0.0/0'
-                or rule -> 'properties' ->> 'sourceAddressPrefix' = 'Internet'
-                or (
-                  rule -> 'properties' ->> 'sourceAddressPrefix' is null
-                  and (
-                    rule -> 'properties' -> 'sourceAddressPrefixes' @> '["*"]'
-                    or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["0.0.0.0/0"]'
-                    or rule -> 'properties' -> 'sourceAddressPrefixes' @> '["Internet"]'
-                  )
-                )
-              )
-              and (
-                (
-                  rule -> 'properties' ->> 'destinationPortRange' in ('20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080')
-                )
-                or (
-                rule -> 'properties' ->> 'destinationPortRange' is null
-                and (
-                  rule -> 'properties' -> 'destinationPortRanges' ?| array['20', '22', '21', '3389', '3306', '4333', '23', '25', '445', '110', '135', '143', '1433', '1434', '5432', '5500', '5601', '9200', '9300', '8080']
-                  )
-
-                )
-              )
-            then 1
-          end
-        ) as unrestricted_common_ports_count
+        distinct nsg.name sg_name
       from
-        azure_network_security_group,
-        jsonb_array_elements(security_rules) as rule
-      group by
-        id, name, resource_group, _ctx, region, tags, subscription_id
+        azure_network_security_group nsg,
+        jsonb_array_elements(security_rules) sg,
+        jsonb_array_elements_text(sg -> 'properties' -> 'destinationPortRanges' || (sg -> 'properties' -> 'destinationPortRange') :: jsonb) dport,
+        jsonb_array_elements_text(sg -> 'properties' -> 'sourceAddressPrefixes' || (sg -> 'properties' -> 'sourceAddressPrefix') :: jsonb) sip
+      where
+        sg -> 'properties' ->> 'access' = 'Allow'
+        and sg -> 'properties' ->> 'direction' = 'Inbound'
+        and sip in ('*', '0.0.0.0', '0.0.0.0/0', 'Internet', 'any', '<nw>/0', '/0')
+        and (
+          dport in ('20', '21', '22', '23', '25', '110', '135', '143', '445', '1433', '1434', '3306', '3389', '4333', '5432', '5500', '5601', '8080', '9200', '9300')
+          or (
+            dport like '%-%'
+            and (
+              (
+                split_part(dport, '-', 1) :: integer <= 20
+                and split_part(dport, '-', 2) :: integer >= 20
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 21
+                and split_part(dport, '-', 2) :: integer >= 21
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 22
+                and split_part(dport, '-', 2) :: integer >= 22
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 23
+                and split_part(dport, '-', 2) :: integer >= 23
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 25
+                and split_part(dport, '-', 2) :: integer >= 25
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 110
+                and split_part(dport, '-', 2) :: integer >= 110
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 135
+                and split_part(dport, '-', 2) :: integer >= 135
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 143
+                and split_part(dport, '-', 2) :: integer >= 143
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 445
+                and split_part(dport, '-', 2) :: integer >= 445
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 1433
+                and split_part(dport, '-', 2) :: integer >= 1433
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 1434
+                and split_part(dport, '-', 2) :: integer >= 1434
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 3306
+                and split_part(dport, '-', 2) :: integer >= 3306
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 3389
+                and split_part(dport, '-', 2) :: integer >= 3389
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 4333
+                and split_part(dport, '-', 2) :: integer >= 4333
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 5432
+                and split_part(dport, '-', 2) :: integer >= 5432
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 5500
+                and split_part(dport, '-', 2) :: integer >= 5500
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 5601
+                and split_part(dport, '-', 2) :: integer >= 5601
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 8080
+                and split_part(dport, '-', 2) :: integer >= 8080
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 9200
+                and split_part(dport, '-', 2) :: integer >= 9200
+              )
+              or (
+                split_part(dport, '-', 1) :: integer <= 9300
+                and split_part(dport, '-', 2) :: integer >= 9300
+              )
+            )
+          )
+        )
     )
     select
       nsg.id as resource,
       case
-        when unrestricted_common_ports_count = 0 then 'ok'
+        when cpr.sg_name is null then 'ok'
         else 'alarm'
       end as status,
       case
-        when unrestricted_common_ports_count = 0 then nsg.name || ' restricts access to common ports from the internet.'
-        else nsg.name || ' allows unrestricted access to ' || unrestricted_common_ports_count || ' common port(s) from the internet.'
+        when cpr.sg_name is null then nsg.name || ' restricts access to common ports from the internet.'
+        else nsg.name || ' allows unrestricted access to common ports from the internet.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "nsg.")}
       ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
     from
-      common_ports_rules nsg,
+      azure_network_security_group nsg
+      left join common_ports_rules cpr on cpr.sg_name = nsg.name,
       azure_subscription sub
     where
       sub.subscription_id = nsg.subscription_id;
