@@ -13,7 +13,7 @@ benchmark "public_access" {
 }
 
 benchmark "cors_policy_public_access" {
-  title         = "CORS policy public access"
+  title         = "CORS Policy Public Access"
   description   = "Resources should not be publicly accessible through CORS policies."
   documentation = file("./perimeter/docs/cors_policy_public_access.md")
   children = [
