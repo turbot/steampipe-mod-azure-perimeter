@@ -70,13 +70,13 @@ powerpipe benchmark list
 Run a benchmark:
 
 ```sh
-powerpipe benchmark run network_access
+powerpipe benchmark run azure_perimeter.benchmark.network_access
 ```
 
 Run a specific control:
 
 ```sh
-powerpipe control run network_security_group_restrict_ingress_common_ports_all
+powerpipe control run azure_perimeter.control.network_security_group_restrict_ingress_common_ports_all
 ```
 
 Different output formats are also available, for more information please see
@@ -96,7 +96,7 @@ vi powerpipe.ppvars
 Alternatively you can pass variables on the command line:
 
 ```sh
-powerpipe benchmark run public_access_settings --var 'common_dimensions=["subscription_id", "connection_name", "resource_group"]'
+powerpipe benchmark run azure_perimeter.benchmark.public_access_settings --var 'common_dimensions=["subscription_id", "connection_name", "resource_group"]'
 ```
 
 Or through environment variables:
@@ -104,7 +104,7 @@ Or through environment variables:
 ```sh
 export PP_VAR_common_dimensions='["subscription_id", "connection_name", "resource_group"]'
 export PP_VAR_tag_dimensions='["Environment", "Owner"]'
-powerpipe control run network_security_group_restrict_ingress_common_ports_all
+powerpipe control run azure_perimeter.control.network_security_group_restrict_ingress_common_ports_all
 ```
 
 ## Open Source & Contributing
