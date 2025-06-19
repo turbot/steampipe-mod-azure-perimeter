@@ -32,7 +32,7 @@ benchmark "public_access_settings" {
   description   = "Resources should not be publicly accessible or exposed to the internet through configurations and settings."
   documentation = file("./perimeter/docs/public_access_settings.md")
   children = [
-    control.kubernetes_cluster_private_only,
+    control.kubernetes_cluster_private,
     control.storage_account_should_prohibit_blob_public_access,
     control.storage_container_prohibit_public_access
   ]
