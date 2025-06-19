@@ -11,3 +11,6 @@
 # Powerpipe variable files
 *.ppvars
 *.auto.ppvars
+
+# macOS system files
+.DS_Store
