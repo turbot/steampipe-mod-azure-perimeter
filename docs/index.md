@@ -96,7 +96,7 @@ vi powerpipe.ppvars
 Alternatively you can pass variables on the command line:
 
 ```sh
-powerpipe benchmark run public_access_settings --var 'common_dimensions=[""subscription_id", "connection_name", "resource_group"]'
+powerpipe benchmark run public_access_settings --var 'common_dimensions=["subscription_id", "connection_name", "resource_group"]'
 ```
 
 Or through environment variables:

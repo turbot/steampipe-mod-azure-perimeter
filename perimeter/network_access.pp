@@ -356,8 +356,8 @@ benchmark "public_ips" {
 }
 
 control "compute_vm_no_public_ip" {
-  title       = "Compute Virtual machines should not have a public IP address"
-  description = "Azure compute virtual machines should not have public IP addresses directly assigned to them to reduce exposure to internet-based attacks."
+  title       = "Compute virtual machines should not have a public IP address"
+  description = "Azure compute virtual machines should not have a public IP address directly assigned to it to reduce exposure to internet-based attacks."
 
   sql = <<-EOQ
     select

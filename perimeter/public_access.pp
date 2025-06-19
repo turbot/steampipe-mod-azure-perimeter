@@ -4,7 +4,7 @@ benchmark "public_access" {
   documentation = file("./perimeter/docs/public_access.md")
   children = [
     benchmark.public_access_settings,
-    benchmark.resource_cors_public_access
+    benchmark.cors_policy_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -12,15 +12,14 @@ benchmark "public_access" {
   })
 }
 
-benchmark "resource_cors_public_access" {
-  title         = "Resource cors policy public access"
+benchmark "cors_policy_public_access" {
+  title         = "CORS policy public access"
   description   = "Resources should not be publicly accessible through CORS policies."
-  documentation = file("./perimeter/docs/resource_cors_public_access.md")
+  documentation = file("./perimeter/docs/cors_policy_public_access.md")
   children = [
-    control.cosmosdb_account_cors_prohibit_public_access,
-    control.appservice_web_app_cors_prohibit_public_access,
     control.appservice_function_app_cors_prohibit_public_access,
-    control.appservice_api_app_cors_prohibit_public_access
+    control.appservice_web_app_cors_prohibit_public_access,
+    control.cosmosdb_account_cors_prohibit_public_access
   ]
 
   tags = merge(local.azure_perimeter_common_tags, {
@@ -104,8 +103,8 @@ control "storage_container_prohibit_public_access" {
   })
 }
 
-control "kubernetes_cluster_private_only" {
-  title       = "AKS clusters should be private only"
+control "kubernetes_cluster_private" {
+  title       = "AKS clusters should be private"
   description = "Azure Kubernetes Service (AKS) clusters should have private cluster enabled to restrict worker node from API access for better security and isolation."
 
   sql = <<-EOQ
@@ -187,7 +186,7 @@ control "cosmosdb_account_cors_prohibit_public_access" {
 }
 
 control "appservice_web_app_cors_prohibit_public_access" {
-  title       = "Web App CORS policies should prohibit public access"
+  title       = "App Service Web App CORS policies should prohibit public access"
   description = "Azure App Service Web App Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
 
   sql = <<-EOQ
@@ -218,7 +217,7 @@ control "appservice_web_app_cors_prohibit_public_access" {
 }
 
 control "appservice_function_app_cors_prohibit_public_access" {
-  title       = "Function App CORS policies should prohibit public access"
+  title       = "App Service Function App CORS policies should prohibit public access"
   description = "Azure App Service Function App Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
 
   sql = <<-EOQ
@@ -241,53 +240,6 @@ control "appservice_function_app_cors_prohibit_public_access" {
       azure_subscription as sub
     where
       sub.subscription_id = b.subscription_id;
-  EOQ
-
-  tags = merge(local.azure_perimeter_common_tags, {
-    service = "Azure/AppService"
-  })
-}
-
-control "appservice_api_app_cors_prohibit_public_access" {
-  title       = "API App CORS policies should prohibit public access"
-  description = "Azure App Service API App Cross-Origin Resource Sharing (CORS) policies should not allow unrestricted access from any origin that could enable public access."
-
-  sql = <<-EOQ
-    with all_api_app as (
-      select
-        id
-      from
-        azure_app_service_web_app
-      where
-        exists (
-          select
-          from
-            unnest(regexp_split_to_array(kind, ',')) elem
-          where
-            elem like '%api'
-      )
-    )
-    select
-      a.id as resource,
-      case
-        when b.id is null then 'skip'
-        when configuration -> 'properties' -> 'cors' -> 'allowedOrigins' @> '["*"]' then 'alarm'
-        else 'ok'
-      end as status,
-      case
-        when b.id is null then a.title || ' is ' || a.kind || ' kind.'
-        when configuration -> 'properties' -> 'cors' -> 'allowedOrigins' @> '["*"]' then a.name || ' CORS allow all domains to access the application.'
-        else a.name || ' CORS does not all domains to access the application.'
-      end as reason
-      ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
-      ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
-      ${replace(local.common_dimensions_qualifier_subscription_sql, "__QUALIFIER__", "sub.")}
-    from
-      azure_app_service_web_app as a
-      left join all_api_app as b on a.id = b.id,
-      azure_subscription as sub
-    where
-      sub.subscription_id = a.subscription_id;
   EOQ
 
   tags = merge(local.azure_perimeter_common_tags, {
