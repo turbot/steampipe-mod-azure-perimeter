@@ -2,5 +2,5 @@
 
 _What's new?_
 
-- Added Network Access benchmark (`powerpipe benchmark run aws_compliance.benchmark.network_access`) 
-- Added Public Access benchmark (`powerpipe benchmark run aws_compliance.benchmark.public_access`)
+- Added Network Access benchmark (`powerpipe benchmark run azure_perimeter.benchmark.network_access`) 
+- Added Public Access benchmark (`powerpipe benchmark run azure_perimeter.benchmark.public_access`)
