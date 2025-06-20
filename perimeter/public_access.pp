@@ -230,7 +230,7 @@ control "appservice_function_app_cors_prohibit_public_access" {
       case
         when configuration -> 'properties' -> 'cors' -> 'allowedOrigins' @> '["*"]'
           then b.name || ' CORS allow all domains to access the application.'
-        else b.name || ' CORS does not all domains to access the application.'
+        else b.name || ' CORS does not allow all domains to access the application.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "b.")}
       ${replace(local.common_dimensions_qualifier_sql, "__QUALIFIER__", "b.")}
