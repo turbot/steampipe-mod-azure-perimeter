@@ -165,7 +165,7 @@ benchmark "security_group_access" {
 
 control "network_security_group_restrict_ingress_common_ports_all" {
   title       = "Network security groups should restrict ingress access on common ports from the internet"
-  description = "Azure network security groups should not allow unrestricted access from the internet to common ports like 22 (SSH), 3389 (RDP), 1433 (SQL), 3306 (MySQL), 5432 (PostgreSQL), and other sensitive ports."
+  description = "Azure network security groups should not allow unrestricted ingress access from the internet to common ports like 22 (SSH), 3389 (RDP), 1433 (SQL), 3306 (MySQL), 5432 (PostgreSQL), and other sensitive ports."
 
   sql = <<-EOQ
     with common_ports_rules as (
@@ -386,7 +386,7 @@ control "compute_vm_no_public_ip" {
 }
 
 control "network_interface_not_attached_to_public_ip" {
-  title       = "Network interfaces should not have public IP addresses"
+  title       = "Network interfaces should not have a public IP address"
   description = "Azure network interfaces should not be assigned public IP addresses unless explicitly required for the workload to minimize internet exposure."
 
   sql = <<-EOQ

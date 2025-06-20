@@ -33,7 +33,7 @@ benchmark "public_access_settings" {
   documentation = file("./perimeter/docs/public_access_settings.md")
   children = [
     control.kubernetes_cluster_private,
-    control.storage_account_should_prohibit_blob_public_access,
+    control.storage_account_prohibit_blob_public_access,
     control.storage_container_prohibit_public_access
   ]
 
@@ -42,7 +42,7 @@ benchmark "public_access_settings" {
   })
 }
 
-control "storage_account_should_prohibit_blob_public_access" {
+control "storage_account_prohibit_blob_public_access" {
   title       = "Storage accounts should prohibit blob public access"
   description = "Azure Storage accounts should have the 'Allow Blob public access' property set to disabled to prevent unauthorized access."
 
@@ -198,7 +198,7 @@ control "appservice_web_app_cors_prohibit_public_access" {
       end as status,
       case
         when configuration -> 'properties' -> 'cors' -> 'allowedOrigins' @> '["*"]'
-          then a.name || ' CORS allow all domains to access the application.'
+          then a.name || ' CORS policy allows all domains to access the application.'
         else a.name || ' CORS does not allow all domains to access the application.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "a.")}
@@ -229,7 +229,7 @@ control "appservice_function_app_cors_prohibit_public_access" {
       end as status,
       case
         when configuration -> 'properties' -> 'cors' -> 'allowedOrigins' @> '["*"]'
-          then b.name || ' CORS allow all domains to access the application.'
+          then b.name || ' CORS policy allows all domains to access the application.'
         else b.name || ' CORS does not allow all domains to access the application.'
       end as reason
       ${replace(local.tag_dimensions_qualifier_sql, "__QUALIFIER__", "b.")}

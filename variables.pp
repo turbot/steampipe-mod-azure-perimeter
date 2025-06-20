@@ -29,6 +29,12 @@ variable "tag_dimensions" {
   default = []
 }
 
+variable "database" {
+  type        = connection.steampipe
+  description = "Steampipe database connection string."
+  default     = connection.steampipe.default
+}
+
 locals {
   # Local internal variable to build the SQL select clause for common
   # dimensions using a table name qualifier if required. Do not edit directly.
