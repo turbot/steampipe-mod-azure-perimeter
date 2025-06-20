@@ -1,0 +1,5 @@
+# These are the dimensions that will be included as columns in the results
+common_dimensions = ["subscription_id", "region"]
+
+# These are tags that will be included as columns in the results
+tag_dimensions = ["Environment", "Owner"] 
