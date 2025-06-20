@@ -1,12 +1,11 @@
-# Azure Perimeter Mod for Powerpipe
+# Azure Perimeter Mod
 
-An Azure perimeter checking tool that can be used to look for resources that are publicly accessible, shared with untrusted tenants, have insecure network configurations, and more.
+Run security controls across all your Azure subscriptions to look for resources that are publicly accessible, shared with untrusted accounts, have insecure network configurations, and more.
 
-Run checks in a dashboard:
-![image](https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_dashboard.png)
-
-Or in a terminal:
-![image](https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_console.png)
+<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_dashboard.png" width="50%" type="thumbnail"/>
+<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_dashboard.png" width="50%" type="thumbnail"/>
+<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_public_access_dashboard.png" width="50%" type="thumbnail"/>
+<img src="https://raw.githubusercontent.com/turbot/steampipe-mod-azure-perimeter/main/docs/images/azure_perimeter_network_access_console.png" width="50%" type="thumbnail"/>
 
 ## Documentation
 
